@@ -240,24 +240,24 @@ impl RegionFile {
 		// Read the length of the chunk.
 		reader.read_exact(&mut buffer)?;
 		// 1 is subtracted from the lenth that is read because there is 1 byte for the compression scheme, and the rest of the length is the data.
-		let length = (u32::from_be_bytes(buffer) as u64) - 1;
+		let length = (u32::from_be_bytes(buffer) as u64);
 		// Read compression scheme
 		reader.read_exact(&mut buffer[..1])?;
 		let compression_scheme = buffer[0];
 		match compression_scheme {
 			// GZip
 			1 => {
-				let mut dec = GzDecoder::new(reader.take(length));
+				let mut dec = GzDecoder::new(reader.take(length -1));
 				Ok(dec.read_nbt()?)
 			}
 			// ZLib
 			2 => {
-				let mut dec = ZlibDecoder::new(reader.take(length));
+				let mut dec = ZlibDecoder::new(reader.take(length - 1));
 				Ok(dec.read_nbt()?)
 			}
 			// Uncompressed (since a version before 1.15.1)
 			3 => {
-				Ok(reader.take(length).read_nbt()?)
+				Ok(reader.take(length - 1).read_nbt()?)
 			}
 			_ => return Err(RegionError::InvalidCompressionScheme(compression_scheme)),
 		}
