@@ -23,7 +23,7 @@ use flate2::read::ZlibDecoder;
 
 use chrono::prelude::*;
 
-use crate::nbt::{tag::NamedTag, NbtError, io::ReadNbt, io::NbtRead};
+use crate::nbt::{tag::NamedTag, NbtError, io::{ReadNbt, WriteNbt}, io::{NbtRead, NbtWrite}};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -65,11 +65,19 @@ impl ChunkOffset {
 	}
 
 	pub fn offset(&self) -> u64 {
-		(self.0.overflowing_shr(8).0 as u64) * 4096
+		self.sector_offset() * 4096
 	}
 
 	pub fn size(&self) -> u64 {
-		((self.0 & 0xFF) as u64) * 4096
+		self.sector_count() * 4096
+	}
+
+	pub fn sector_offset(&self) -> u64 {
+		self.0.overflowing_shr(8).0 as u64
+	}
+
+	pub fn sector_count(&self) -> u64 {
+		(self.0 &0xFF) as u64
 	}
 
 	pub fn empty(&self) -> bool {
@@ -140,11 +148,11 @@ impl From<DateTime<Utc>> for Timestamp {
 //		 - File Modification Time
 //		 - File Size
 pub struct RegionFileInfo {
-	path: PathBuf,
-	metadata: std::fs::Metadata,
-	offsets: Vec<ChunkOffset>,
-	timestamps: Vec<Timestamp>,
-	present_bits: Box<[u64; 16]>,
+	pub(crate) path: PathBuf,
+	pub(crate) metadata: std::fs::Metadata,
+	pub(crate) offsets: Vec<ChunkOffset>,
+	pub(crate) timestamps: Vec<Timestamp>,
+	pub(crate) present_bits: Box<[u64; 16]>,
 }
 
 const fn set_bit(mut value: u64, index: usize, on: bool) -> u64 {
@@ -328,19 +336,92 @@ impl RegionFile {
 		Ok(length > 0)
 	}
 
-	pub fn inject_chunk(&self, x: i64, z: i64, chunk: &NamedTag) -> Result<(), RegionError> {
+	pub fn inject_chunk(&self, x: i32, z: i32, chunk: Option<&NamedTag>) -> Result<(), RegionError> {
 		/*
 		The process for injecting a chunk is fairly difficult.
 		It involves rewriting the file completely. So a temporary file will need to be created.
 		Then each chunk present in the file is systematically copied over to the new file and
 		a new timestamp and chunk offset table is built.
 		*/
+		
+		/// Writes an offset to the offset table then seeks back to where it started.
+		let write_offset = |writer: &mut BufWriter<File>, offset: ChunkOffset, index: i32| -> Result<(), RegionError> {
+			let return_offset = writer.stream_position()?;
+			writer.seek(SeekFrom::Start((index * 4) as u64))?;
+			let buffer = offset.0.to_be_bytes();
+			writer.write_all(&buffer)?;
+			writer.seek(SeekFrom::Start(return_offset))?;
+			Ok(())
+		};
 
+		/// Writes a timestamp to the timestamp table then seeks back to where it started.
+		let write_timestamp = |writer: &mut BufWriter<File>, timestamp: Timestamp, index: i32| -> Result<(), RegionError> {
+			let return_offset = writer.stream_position()?;
+			writer.seek(SeekFrom::Start((index * 4 + 4096) as u64))?;
+			let buffer = timestamp.0.to_be_bytes();
+			writer.write_all(&buffer)?;
+			writer.seek(SeekFrom::Start(return_offset))?;
+			Ok(())
+		};
+
+		let copy_sectors = |count: u64, reader: &mut BufReader<File>, writer: &mut BufWriter<File>| -> Result<usize,RegionError> {
+			let mut buffer = vec![0u8; 4096];
+			for _ in 0..count {
+				reader.read_exact(&mut buffer)?;
+				writer.write_all(&buffer)?;
+			}
+			Ok((count * 4096) as usize)
+		};
+
+		let info = self.info()?;
 		// We open the region file that we plan to inject into.
-		let mut file = self.open()?;
+		let input: File = self.open()?;
 		// Open a temporary file to inject into.
+		let mut output: File = tempfile::tempfile()?;
+		let injection_index = RegionFile::get_index(x, z);
+		output.set_len(4096);
+		let mut writer = BufWriter::with_capacity(4096, output);
+		let mut reader = BufReader::with_capacity(4096, input);
+
+		let mut current_sector = 2;
+		for i in 0..1024 {
+			match i {
+				injection_index => {
+					if let Some(chunk) = chunk {
+						let sector_offset = current_sector;
+						// Inject the chunk into the file
+						let mut buffer = Vec::new();
+						chunk.nbt_write(&mut buffer)?;
+						let required_sectors = RegionFile::required_sectors(buffer.len() as u64);
+					}
+				},
+				_ => {
+
+					// Seek to the offset in the reader where the chunk is stored.
+					let offset = info.offsets[i];
+					if !offset.empty() {
+						let sector_count = offset.size();
+						copy_sectors(offset.sector_count(), &mut reader, &mut writer);
+						current_sector += offset.sector_count();
+					}
+				}
+			}
+		}
 
 		Ok(())
+	}
+
+	/// Counts the number of sectors required to accomodate `size` bytes.
+	fn required_sectors(size: u64) -> u64 {
+		if size == 0 {
+			return 0;
+		}
+		if size < 4096 {
+			return 1;
+		}
+		let sub = size / 4096;
+		let overflow = if size.rem_euclid(4096) != 0 { 1 } else { 0 };
+		sub + overflow
 	}
 
 }
