@@ -13,7 +13,8 @@ use std::{
 	},
 	fs::{
 		File,
-	}, result, str::FromStr, ops::BitOr
+	},
+	ops::{BitOr}
 };
 
 use std::io::prelude::*;
@@ -32,7 +33,7 @@ pub enum RegionError {
 	#[error("NBT error")]
 	Nbt(#[from] crate::nbt::NbtError),
 	#[error("Chunk doesn't exist.")]
-	ChunkError,
+	ChunkNotPresent,
 	#[error("Invalid compression scheme.")]
 	InvalidCompressionScheme(u8),
 }
@@ -71,6 +72,10 @@ impl ChunkOffset {
 		((self.0 & 0xFF) as u64) * 4096
 	}
 
+	pub fn empty(&self) -> bool {
+		self.0 == 0
+	}
+
 	pub fn read<R: Read>(mut reader: R) -> std::io::Result<Self> {
 		let mut buffer = [0u8; 4];
 		reader.read_exact(&mut buffer[1..4])?;
@@ -86,12 +91,24 @@ impl ChunkOffset {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 pub struct Timestamp(pub u32);
 
+impl TryFrom<Timestamp> for DateTime<Utc> {
+    type Error = ();
+
+    fn try_from(value: Timestamp) -> Result<Self, Self::Error> {
+        let naive = NaiveDateTime::from_timestamp_opt(value.0 as i64, 0);
+		if let Some(naive) = naive {
+			Ok(DateTime::<Utc>::from_utc(naive, Utc))
+		} else {
+			Err(())
+		}
+    }
+}
+
 impl Timestamp {
 
 	pub fn to_datetime(&self) -> Option<DateTime<Utc>> {
-		let naive = NaiveDateTime::from_timestamp_opt(self.0 as i64, 0);
-		if let Some(naive) = naive {
-			Some(DateTime::<Utc>::from_utc(naive, Utc))
+		if let Ok(result) = DateTime::<Utc>::try_from(*self) {
+			Some(result)
 		} else {
 			None
 		}
@@ -124,15 +141,29 @@ impl From<DateTime<Utc>> for Timestamp {
 //		 - File Size
 pub struct RegionFileInfo {
 	path: PathBuf,
-	timestamps: Vec<Timestamp>,
-	offsets: Vec<ChunkOffset>,
 	metadata: std::fs::Metadata,
+	offsets: Vec<ChunkOffset>,
+	timestamps: Vec<Timestamp>,
+	present_bits: Box<[u64; 16]>,
+}
+
+const fn set_bit(mut value: u64, index: usize, on: bool) -> u64 {
+	if on {
+		value | (1 << index)
+	} else {
+		value & !(1 << index)
+	}
+}
+
+const fn get_bit(value: u64, index: usize) -> bool {
+	value & (1 << index) != 0
 }
 
 impl RegionFileInfo {
 
 	pub fn load<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
 		let file = File::open(path.as_ref())?;
+		let metadata = std::fs::metadata(path.as_ref())?;
 		let mut reader = BufReader::with_capacity(4096, file);
 		// Read the Chunk Offsets (32x32)
 		// 		The Chunk Offsets tell us the location within the file and size of chunks.
@@ -143,31 +174,73 @@ impl RegionFileInfo {
 		let timestamps: Vec<Timestamp> = (0..32*32).map(|_|
 			Timestamp::read(&mut reader)
 		).collect::<std::io::Result<Vec<Timestamp>>>()?;
-		let metadata = std::fs::metadata(path.as_ref())?;
+		let mut bits: Box<[u64; 16]> = Box::new([0; 16]);
+		let mut buffer: [u8; 4] = [0; 4];
+		let counter = 0;
+		for i in 0..1024 {
+			if !offsets[i].empty() {
+				reader.seek(SeekFrom::Start(offsets[i].offset()))?;
+				reader.read_exact(&mut buffer)?;
+				let length = u32::from_be_bytes(buffer);
+				if length != 0 {
+					let bitword_index = i.div_euclid(64);
+					bits[bitword_index] = set_bit(bits[bitword_index], i.rem_euclid(64), true);
+				}
+			}
+		}
 		Ok(Self {
 			path: PathBuf::from(path.as_ref()),
-			timestamps,
-			offsets,
 			metadata,
+			offsets,
+			timestamps,
+			present_bits: bits,
 		})
-	}
-
-	pub fn path(&self) -> &Path {
-		&self.path
 	}
 
 	pub fn open(&self) -> std::io::Result<File> {
 		File::open(&self.path)
 	}
 
-	pub fn get_timestamp(&self, x: i64, z: i64) -> Timestamp {
+	pub fn path(&self) -> &Path {
+		&self.path
+	}
+
+	pub fn metadata(&self) -> std::fs::Metadata {
+		self.metadata.clone()
+	}
+
+	pub fn get_offset(&self, x: i32, z: i32) -> ChunkOffset {
+		let index = RegionFile::get_index(x,z);
+		self.offsets[index as usize]
+	}
+
+	pub fn get_timestamp(&self, x: i32, z: i32) -> Timestamp {
 		let index = RegionFile::get_index(x,z);
 		self.timestamps[index as usize]
 	}
 
-	pub fn get_offset(&self, x: i64, z: i64) -> ChunkOffset {
-		let index = RegionFile::get_index(x,z);
-		self.offsets[index as usize]
+	pub fn has_chunk(&self, x: i32, z: i32) -> bool {
+		let index = RegionFile::get_index(x, z);
+		let bitword_index = index.div_euclid(64);
+		let bit_index = index.rem_euclid(64);
+		get_bit(self.present_bits[bitword_index as usize], bit_index as usize)
+	}
+
+	pub fn creation_time(&self) -> std::io::Result<std::time::SystemTime> {
+		self.metadata.created()
+	}
+
+	pub fn modified_time(&self) -> std::io::Result<std::time::SystemTime> {
+		self.metadata.modified()
+	}
+
+	pub fn accessed_time(&self) -> std::io::Result<std::time::SystemTime> {
+		self.metadata.accessed()
+	}
+
+	/// Returns the size of the region file.
+	pub fn size(&self) -> u64 {
+		self.metadata.len()
 	}
 
 }
@@ -184,10 +257,18 @@ pub struct RegionFile {
 
 impl RegionFile {
 
+	/*
+	Some notes about the functions in this implementation:
+		Coordinates (x and z) are not relative.
+		So if you want the chunk at (0,0) in the region, you could use (0,0), or (32, 32), or (0, 32), etc.
+		The formula is (x % 32, z % 32).
+
+	*/
+
 	/// This function gets the flat index (in an array of 1024 elements) from a 32x32 grid.
 	/// This is a helper function to help find the offset in a region file where certain information is stored.
-	pub(crate) const fn get_index(x: i64, z: i64) -> u64 {
-		(x.rem_euclid(32) + z.rem_euclid(32) * 32) as u64
+	pub(crate) const fn get_index(x: i32, z: i32) -> i32 {
+		(x.rem_euclid(32) + z.rem_euclid(32) * 32)
 	}
 
 	/// Creates a RegionFile object with the specified path.
@@ -201,16 +282,16 @@ impl RegionFile {
 		RegionFileInfo::load(&self.path)
 	}
 
-	pub(crate) fn read_chunk_offset<R: Read + Seek>(reader: &mut R, x: i64, z: i64) -> Result<ChunkOffset,RegionError> {
+	pub(crate) fn read_chunk_offset<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<ChunkOffset,RegionError> {
 		let offset = RegionFile::get_index(x, z) * 4;
-		reader.seek(SeekFrom::Start(offset))?;
+		reader.seek(SeekFrom::Start(offset as u64))?;
 		Ok(ChunkOffset::read(reader)?)
 	}
 
-	pub(crate) fn read_timestamp<R: Read + Seek>(reader: &mut R, x: i64, z: i64) -> Result<Timestamp, RegionError> {
+	pub(crate) fn read_timestamp<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<Timestamp, RegionError> {
 		let offset = RegionFile::get_index(x, z) * 4;
 		let mut buffer = [0u8; 4];
-		reader.seek(SeekFrom::Start(offset + 4096))?;
+		reader.seek(SeekFrom::Start(offset as u64 + 4096))?;
 		reader.read_exact(&mut buffer)?;
 		Ok(Timestamp(u32::from_be_bytes(buffer)))
 	}
@@ -224,23 +305,73 @@ impl RegionFile {
 		File::open(&self.path)
 	}
 
-	pub fn get_timestamp(&self, x: i64, z: i64) -> Result<Timestamp, RegionError> {
+	pub fn get_timestamp(&self, x: i32, z: i32) -> Result<Timestamp, RegionError> {
 		let mut file = self.open()?;
 		let mut reader = BufReader::with_capacity(4096, file);
 		RegionFile::read_timestamp(&mut reader, x, z)
 	}
 
-	pub fn get_chunk_nbt(&self, x: i64, z: i64) -> Result<NamedTag,RegionError> {
+	/// This function will open the region file, find the chunk offset, then seek to that offset.
+	pub fn chunk_present(&self, x: i32, z: i32) -> Result<bool, RegionError> {
 		let mut file = self.open()?;
+		let mut reader = BufReader::with_capacity(4096, file);
+		let offset = RegionFile::read_chunk_offset(&mut reader, x, z)?;
+		if offset.empty() {
+			return Ok(false)
+		}
+		reader.seek(SeekFrom::Start(offset.offset()))?;
+		// 4 byte buffer for reading the length of the chunk.
+		// If the length of the chunk is 0, there is no chunk present.
+		let mut buffer = [0u8; 4];
+		reader.read_exact(&mut buffer)?;
+		let length = (u32::from_be_bytes(buffer) as u64);
+		Ok(length > 0)
+	}
+
+	pub fn inject_chunk(&self, x: i64, z: i64, chunk: &NamedTag) -> Result<(), RegionError> {
+		/*
+		The process for injecting a chunk is fairly difficult.
+		It involves rewriting the file completely. So a temporary file will need to be created.
+		Then each chunk present in the file is systematically copied over to the new file and
+		a new timestamp and chunk offset table is built.
+		*/
+
+		// We open the region file that we plan to inject into.
+		let mut file = self.open()?;
+		// Open a temporary file to inject into.
+
+		Ok(())
+	}
+
+}
+
+pub trait ChunkProvider {
+
+	type Error;
+
+	fn get_chunk_nbt(&self, x: i32, z: i32) -> Result<NamedTag, Self::Error>;
+
+}
+
+impl ChunkProvider for RegionFile {
+	type Error = RegionError;
+
+	fn get_chunk_nbt(&self, x: i32, z: i32) -> Result<NamedTag, Self::Error> {
+        let mut file = self.open()?;
 		let mut reader = BufReader::with_capacity(4 << 10, file);
 		let offset = RegionFile::read_chunk_offset(&mut reader, x, z)?;
-		// Seek to the offset
+		if offset.empty() {
+			return Err(RegionError::ChunkNotPresent);
+		}
 		reader.seek(SeekFrom::Start(offset.offset()))?;
 		let mut buffer = [0u8; 4];
 		// Read the length of the chunk.
 		reader.read_exact(&mut buffer)?;
 		// 1 is subtracted from the lenth that is read because there is 1 byte for the compression scheme, and the rest of the length is the data.
 		let length = (u32::from_be_bytes(buffer) as u64);
+		if length == 0 {
+			return Err(RegionError::ChunkNotPresent);
+		}
 		// Read compression scheme
 		reader.read_exact(&mut buffer[..1])?;
 		let compression_scheme = buffer[0];
@@ -261,5 +392,6 @@ impl RegionFile {
 			}
 			_ => return Err(RegionError::InvalidCompressionScheme(compression_scheme)),
 		}
-	}
+    }
+
 }
