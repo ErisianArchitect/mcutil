@@ -153,21 +153,21 @@ macro_rules! find_child_dry {
 }
 
 impl<'a> ValueRef<'a> {
-	fn get_child<'b>(&'b self, at: &TagPathPart) -> Option<ValueRef<'a>> {
+	pub fn get_child<'b>(&'b self, at: &TagPathPart) -> Option<ValueRef<'a>> {
 		get_child_dry!(self:ValueRef at => ValueRef)
 	}
 }
 
 impl Tag {
-	fn get_child<'a>(&'a self, at: &TagPathPart) -> Option<ValueRef<'a>> {
+	pub fn get_child<'a>(&'a self, at: &TagPathPart) -> Option<ValueRef<'a>> {
 		get_child_dry!(self:Tag at => ValueRef)
 	}
 
-	fn get_child_mut<'a>(&'a mut self, at: &TagPathPart) -> Option<ValueRefMut<'a>> {
+	pub fn get_child_mut<'a>(&'a mut self, at: &TagPathPart) -> Option<ValueRefMut<'a>> {
 		get_child_dry!(self:Tag at => &mut ValueRefMut)
 	}
 
-	fn find_child<'a>(&'a self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
+	pub fn find_child<'a>(&'a self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
 		if path.is_empty() {
 			return None;
 		}

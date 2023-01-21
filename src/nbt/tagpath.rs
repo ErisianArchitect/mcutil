@@ -92,12 +92,6 @@ impl FromStr for TagPath {
     }
 }
 
-impl Tag {
-	pub fn get_tag<'a>() -> Option<&'a Tag> {
-		todo!("Not yet implemented.")
-	}
-}
-
 #[derive(PartialEq, Eq,PartialOrd, Ord, Clone, Hash, Debug)]
 pub enum TagPathToken {
 	Dot,
@@ -202,44 +196,39 @@ token_parse_functions!{
 
 /// Returns a parser that takes [TagPathToken] as input and returns a [Tag].
 fn tag_path_parser() -> impl Parser<TagPathToken, Vec<TagPathPart>, Error = Simple<TagPathToken>> {
-	filter(|token| matches!(token, TagPathToken::Identifier(_)))
+	let bracketed = just(TagPathToken::OpenBracket).ignore_then(
+		filter(|token| matches!(token, TagPathToken::Integer(_) | TagPathToken::StringLiteral(_) | TagPathToken::Identifier(_)))
+			.try_map(|token, span| {
+				match token {
+					TagPathToken::Integer(digits) => {
+						digits.parse::<i64>()
+							.map(TagPathPart::AtIndex)
+							.map_err(|_| Simple::custom(span, "Failed to parse i64."))
+					},
+					TagPathToken::Identifier(ident) => Ok(TagPathPart::AtKey(ident)),
+					TagPathToken::StringLiteral(ident) => Ok(TagPathPart::AtKey(ident)),
+					_ => Err(Simple::custom(span, "Impossible failure.")),
+				}
+			})
+	).then_ignore(just(TagPathToken::CloseBracket));
+
+	let ident = filter(|token| matches!(token, TagPathToken::Identifier(_)))
 		.try_map(|token, span| {
 			match token {
 				TagPathToken::Identifier(ident) => Ok(TagPathPart::AtKey(ident)),
 				_ => Err(Simple::custom(span, "Impossible failure.")),
 			}
-		}).or_not()
-		.chain(
-			choice((
-				just(TagPathToken::OpenBracket).ignore_then(
-					choice((
-						filter(|token| matches!(token, TagPathToken::Integer(_) | TagPathToken::StringLiteral(_) | TagPathToken::Identifier(_)))
-							.try_map(|token, span| {
-								match token {
-									TagPathToken::Integer(digits) => {
-										digits.parse::<i64>()
-											.map(TagPathPart::AtIndex)
-											.map_err(|_| Simple::custom(span, "Failed to parse i64."))
-									},
-									TagPathToken::Identifier(ident) => Ok(TagPathPart::AtKey(ident)),
-									TagPathToken::StringLiteral(ident) => Ok(TagPathPart::AtKey(ident)),
-									_ => Err(Simple::custom(span, "Invalid token.")),
-								}
-							})
-						,
-						just(TagPathToken::CloseBracket).to(TagPathPart::AtIndex(0))
-					))
-				).then_ignore(just(TagPathToken::CloseBracket)),
-				just(TagPathToken::Dot).ignore_then(
-					filter(|token| matches!(token, TagPathToken::Identifier(_)))
-						.try_map(|token, span| {
-							if let TagPathToken::Identifier(ident) = token {
-								Ok(TagPathPart::AtKey(ident))
-							} else {
-								Err(Simple::custom(span, "Impossible failure."))
-							}
-						})
-				)
-			)).repeated().at_least(1)
-		).then_ignore(end())
+		});
+
+	let dot = just(TagPathToken::Dot).ignore_then(ident.clone());
+
+	let part = choice((
+		bracketed,
+		dot,
+	));
+
+	choice((
+		ident.chain(part.clone().repeated().then_ignore(end())),
+		part.repeated().then_ignore(end())
+	))
 }

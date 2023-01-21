@@ -24,7 +24,7 @@ use flate2::read::ZlibDecoder;
 
 use chrono::prelude::*;
 
-use crate::nbt::{tag::*, NbtError, io::{ReadNbt, WriteNbt}, io::{NbtRead, NbtWrite}};
+use crate::nbt::{tag::*, NbtError, io::{ReadNbt, WriteNbt}, io::{NbtRead, NbtWrite, NbtSize}};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -80,7 +80,7 @@ impl ChunkOffset {
 	}
 
 	pub fn sector_count(&self) -> u64 {
-		(self.0 &0xFF) as u64
+		(self.0 & 0xFF) as u64
 	}
 
 	pub fn empty(&self) -> bool {
@@ -391,7 +391,6 @@ impl RegionFile {
 		// Open a temporary file to inject into.
 		let mut outputfile = tempfile::NamedTempFile::new()?;
 		let injection_index = RegionFile::get_index(x, z);
-		//output.set_len(4096)?;
 		let mut writer = BufWriter::with_capacity(4096, outputfile);
 		let mut reader = BufReader::with_capacity(4096, input);
 		
@@ -412,9 +411,16 @@ impl RegionFile {
 						// Inject the chunk into the file
 						let mut buffer = Vec::new();
 						let mut compressor = ZlibEncoder::new(buffer, Compression::best());
-						chunk.nbt_write(&mut compressor)?;
+
+						println!("Chunk size: {}", chunk.nbt_size());
+
+						compressor.write_nbt(chunk)?;
+						// chunk.nbt_write(&mut compressor)?;
 						buffer = compressor.finish()?;
 						let length = buffer.len() as u32;
+						
+						println!("Buffer size: {}", length);
+
 						let length_buffer = length.to_be_bytes();
 						writer.write(&length_buffer)?;
 						writer.write(&buffer)?;
@@ -436,6 +442,7 @@ impl RegionFile {
 						let sector_count = offset.sector_count();
 						reader.seek(SeekFrom::Start(offset.offset()))?;
 						copy_sectors(offset.sector_count(), &mut reader, &mut writer);
+						write_timestamp(&mut writer, info.timestamps[i], i)?;
 						write_offset(&mut writer, ChunkOffset::new(current_sector, sector_count as u8), i)?;
 						current_sector += offset.sector_count() as u32;
 					}
