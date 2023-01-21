@@ -72,6 +72,17 @@ pub struct Chunk {
 	structures: Map,
 }
 
+pub fn get_coord_from_chunk_nbt(tag: &Tag) -> Option<(i32, i32)> {
+	if let Tag::Compound(compound) = tag {
+		if let Some(Tag::Int(x_pos)) = compound.get("xPos") {
+			if let Some(Tag::Int(z_pos)) = compound.get("zPos") {
+				return Some((*x_pos, *z_pos));
+			}
+		}
+	}
+	None
+}
+
 // impl DecodeNbt for Chunk {
 //     type Error = ();
 

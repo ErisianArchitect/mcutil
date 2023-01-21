@@ -35,7 +35,7 @@ use std::fmt::{Write, Display};
 use std::str::FromStr;
 
 #[derive(PartialEq, Eq,PartialOrd, Ord, Clone, Hash, Debug)]
-pub enum Token {
+pub enum SnbtToken {
 	Comma,
 	Colon,
 	ArrayStart(ArrayType),
@@ -81,22 +81,22 @@ pub enum DecimalType {
 //     name => { /* parser initialization */ }
 macro_rules! token_parse_functions {
 	($($name:ident => $block:block)+) => {
-		impl Token {
+		impl SnbtToken {
 			$(
-				pub fn $name() -> impl Parser<char, Token, Error = Simple<char>>
+				pub fn $name() -> impl Parser<char, SnbtToken, Error = Simple<char>>
 				$block
 			)+
 
-			pub fn parse<S: AsRef<str>>(source: S) -> Result<Vec<Token>, Vec<Simple<char>>> {
+			pub fn parse<S: AsRef<str>>(source: S) -> Result<Vec<SnbtToken>, Vec<Simple<char>>> {
 				choice((
 					$(
 						Self::$name(),
 					)+
 				))
-				.padded() // each token may be padded with whitespace
+				.padded() // each SnbtToken may be padded with whitespace
 				.repeated().at_least(1)
 				.then_ignore(end()) // Force read until end.
-				.collect::<Vec<Token>>()
+				.collect::<Vec<SnbtToken>>()
 				.parse(source.as_ref())
 			}
 		}
@@ -104,8 +104,8 @@ macro_rules! token_parse_functions {
 }
 
 token_parse_functions!{
-	comma => { just(',').to(Token::Comma).labelled("Comma") }
-	colon => { just(':').to(Token::Colon).labelled("Colon") }
+	comma => { just(',').to(SnbtToken::Comma).labelled("Comma") }
+	colon => { just(':').to(SnbtToken::Colon).labelled("Colon") }
 	array_start => {
 		just('[')
 			.ignore_then(
@@ -116,17 +116,17 @@ token_parse_functions!{
 				))
 			)
 			.then_ignore(just(';'))
-			.map(Token::ArrayStart)
+			.map(SnbtToken::ArrayStart)
 			.labelled("Array Start")
 	}
-	open_bracket => { just('[').to(Token::OpenBracket).labelled("Open Bracket") }
-	close_bracket => { just(']').to(Token::CloseBracket).labelled("Close Bracket") }
-	open_brace => { just('{').to(Token::OpenBrace).labelled("Open Brace") }
-	close_brace => { just('}').to(Token::CloseBrace).labelled("Close Brace") }
+	open_bracket => { just('[').to(SnbtToken::OpenBracket).labelled("Open Bracket") }
+	close_bracket => { just(']').to(SnbtToken::CloseBracket).labelled("Close Bracket") }
+	open_brace => { just('{').to(SnbtToken::OpenBrace).labelled("Open Brace") }
+	close_brace => { just('}').to(SnbtToken::CloseBrace).labelled("Close Brace") }
 	boolean => {
 		choice((
-			text::keyword("true").to(Token::Boolean(true)),
-			text::keyword("false").to(Token::Boolean(false)),
+			text::keyword("true").to(SnbtToken::Boolean(true)),
+			text::keyword("false").to(SnbtToken::Boolean(false)),
 		))
 		.labelled("Boolean")
 	}
@@ -151,7 +151,7 @@ token_parse_functions!{
 				}),
 				end().to('\0')
 			)).rewind())
-			.map(|(int_text, int_type)| Token::Integer(int_text, int_type))
+			.map(|(int_text, int_type)| SnbtToken::Integer(int_text, int_type))
 			.labelled("Integer")
 	}
 	decimal => {
@@ -186,7 +186,7 @@ token_parse_functions!{
 				}),
 				end().to('\0')
 			)).rewind())
-			.map(|(dec_str, dec_type)| Token::Decimal(dec_str, dec_type))
+			.map(|(dec_str, dec_type)| SnbtToken::Decimal(dec_str, dec_type))
 			.labelled("Decimal")
 	}
 	identifier => {
@@ -196,7 +196,7 @@ token_parse_functions!{
 		))
 		.repeated().at_least(1)
 		.collect::<String>()
-		.map(Token::Identifier)
+		.map(SnbtToken::Identifier)
 		.labelled("Identifier")
 	}
 	string_literal => {
@@ -211,7 +211,7 @@ token_parse_functions!{
 				.or(just('r').to('\r'))
 				.or(just('t').to('\t'))
 		);
-		Token::identifier().or(
+		SnbtToken::identifier().or(
 			choice::<_,Simple<char>>((
 				just('"')
 					.ignore_then(
@@ -225,21 +225,21 @@ token_parse_functions!{
 					)
 					.then_ignore(just('\''))
 					.collect::<String>(),
-			)).map(Token::StringLiteral))
+			)).map(SnbtToken::StringLiteral))
 			.labelled("String Literal")
 	}
 }
 
-/// Returns a parser that takes [Token] as input and returns a [Tag].
-fn parser() -> impl Parser<Token, Tag, Error = Simple<Token>> {
+/// Returns a parser that takes [SnbtToken] as input and returns a [Tag].
+fn snbt_parser() -> impl Parser<SnbtToken, Tag, Error = Simple<SnbtToken>> {
 	// Macros rule!
 	macro_rules! num_parsers {
 		($(let $name:ident = Token::$token_type:ident($subtype:path) => $type:ty;)+) => {
 			$(
-				let $name = filter::<Token,_,Simple<Token>>(|token| matches!(token, Token::$token_type(_, $subtype)))
+				let $name = filter::<SnbtToken,_,Simple<SnbtToken>>(|token| matches!(token, SnbtToken::$token_type(_, $subtype)))
 					.try_map(|token, span| {
 						match token {
-							Token::$token_type(digits, $subtype) => {
+							SnbtToken::$token_type(digits, $subtype) => {
 								digits.parse::<$type>().map_err(|_| Simple::custom(span, concat!("Failed to parse.")))
 							},
 							_ => Err(Simple::custom(span, "Invalid token.")),
@@ -258,16 +258,16 @@ fn parser() -> impl Parser<Token, Tag, Error = Simple<Token>> {
 	};
 	let byte = byte.or(
 		choice((
-			filter(|token| matches!(token, Token::Boolean(true))).to(1i8),
-			filter(|token| matches!(token, Token::Boolean(false))).to(0i8),
+			filter(|token| matches!(token, SnbtToken::Boolean(true))).to(1i8),
+			filter(|token| matches!(token, SnbtToken::Boolean(false))).to(0i8),
 		))
 	);
 	macro_rules! array_parsers {
 		($(let $name:ident = [$type:ident; $item:expr];)+) => {
 			$(
 				let $name = ($item)
-					.separated_by(just(Token::Comma))
-					.delimited_by(just(Token::ArrayStart(ArrayType::$type)), just(Token::CloseBracket));
+					.separated_by(just(SnbtToken::Comma))
+					.delimited_by(just(SnbtToken::ArrayStart(ArrayType::$type)), just(SnbtToken::CloseBracket));
 			)+
 		};
 	}
@@ -277,18 +277,18 @@ fn parser() -> impl Parser<Token, Tag, Error = Simple<Token>> {
 		let longarray = [Long; long.clone()];
 	}
 	let byte = byte.or(
-		filter::<Token,_,Simple<Token>>(|token| matches!(token, Token::Boolean(_)))
+		filter::<SnbtToken,_,Simple<SnbtToken>>(|token| matches!(token, SnbtToken::Boolean(_)))
 			.map(|token| match token {
-				Token::Boolean(true) => 1i8,
+				SnbtToken::Boolean(true) => 1i8,
 				_ => 0i8,
 			})
 	);
 	// converts Token::StringLiteral and Token::Identifier into String.
 	// This is because these tokens may mean different things in different contexts.
-	let string = filter::<Token,_,Simple<Token>>(|token| matches!(token, Token::StringLiteral(_) | Token::Identifier(_)))
+	let string = filter::<SnbtToken,_,Simple<SnbtToken>>(|token| matches!(token, SnbtToken::StringLiteral(_) | SnbtToken::Identifier(_)))
 		.map(|token| match token {
-			Token::StringLiteral(data) => data,
-			Token::Identifier(data) => data,
+			SnbtToken::StringLiteral(data) => data,
+			SnbtToken::Identifier(data) => data,
 			_ => panic!("Impossible state.")
 		});
 
@@ -312,12 +312,12 @@ fn parser() -> impl Parser<Token, Tag, Error = Simple<Token>> {
 
 	macro_rules! list_maker {
 		($([$pattern:expr]),+) => {
-			choice::<_,Simple<Token>>((
+			choice::<_,Simple<SnbtToken>>((
 				$(
 					($pattern)
-						.separated_by(just(Token::Comma))
+						.separated_by(just(SnbtToken::Comma))
 						.allow_trailing()
-						.delimited_by(just(Token::OpenBracket), just(Token::CloseBracket))
+						.delimited_by(just(SnbtToken::OpenBracket), just(SnbtToken::CloseBracket))
 						.map(ListTag::from),
 				)+
 			))
@@ -343,11 +343,11 @@ fn parser() -> impl Parser<Token, Tag, Error = Simple<Token>> {
 
 	compound.define(
 		string.clone()
-			.then_ignore(just(Token::Colon))
+			.then_ignore(just(SnbtToken::Colon))
 			.then(tag_match.clone())
-			.separated_by(just(Token::Comma))
+			.separated_by(just(SnbtToken::Comma))
 			.allow_trailing()
-			.delimited_by(just(Token::OpenBrace), just(Token::CloseBrace))
+			.delimited_by(just(SnbtToken::OpenBrace), just(SnbtToken::CloseBrace))
 			.map(crate::nbt::Map::from_iter)
 	);
 
@@ -415,9 +415,9 @@ impl Tag {
 	/// }
 	/// ```
 	pub fn parse<S: AsRef<str>>(source: S) -> Result<Tag, ParseError> {
-		match Token::parse(source) {
+		match SnbtToken::parse(source) {
 			Ok(tokens) => {
-				match parser().parse(tokens) {
+				match snbt_parser().parse(tokens) {
 					Ok(tag) => Ok(tag),
 					Err(errors) => Err(ParseError::ParseFailure(errors)),
 				}
@@ -493,7 +493,7 @@ pub enum ParseError {
 	#[error("Found invalid token(s).")]
 	TokenizeError(Vec<Simple<char>>),
 	#[error("Failed to parse SNBT.")]
-	ParseFailure(Vec<Simple<Token>>),
+	ParseFailure(Vec<Simple<SnbtToken>>),
 }
 
 #[cfg(test)]

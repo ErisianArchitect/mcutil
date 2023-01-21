@@ -10,11 +10,14 @@
 #[macro_export]
 macro_rules! compound {
 	($(($name:expr, $value:expr)),+) => {
-		$crate::tag::Tag::Compound($crate::Map::from([
+		$crate::nbt::tag::Tag::Compound($crate::nbt::Map::from([
 			$(
-				($crate::list!(@literal_to_owned;$name), $crate::tag::Tag::from($value)),
+				($crate::list!(@literal_to_owned;$name), $crate::nbt::tag::Tag::from($value)),
 			)+
 		]))
+	};
+	() => {
+		$crate::nbt::tag::Tag::Compound($crate::Map::new())
 	};
 }
 
@@ -55,3 +58,14 @@ macro_rules! list {
 
 pub use list;
 pub use compound;
+
+#[cfg(test)]
+mod tests {
+	#[test]
+	fn compound_test() {
+		let tag = compound! {
+			("Hello, world.", "The quick brown fox jumps over the lazy dog."),
+			("Hello, world.", "The quick brown fox jumps over the lazy dog.")
+		};
+	}
+}

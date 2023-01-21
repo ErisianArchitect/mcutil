@@ -602,25 +602,43 @@ impl Display for Tag {
 		//       But I would like to be able to pretty-print SNBT as well.
 		//       So the solution I would like to go with is to create a formatter
 		//       that is configurable.
-		crate::nbt::format::write_tag(f, self, false, crate::nbt::format::Indentation::tabs())
+		crate::nbt::format::write_tag(
+			f,
+			self,
+			false,
+			crate::nbt::format::Indentation::tabs(),
+			true
+		)
 	}
 }
 
 impl Display for ListTag {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		use crate::nbt::format::*;
-		write_list(f, self, false, Indentation::tabs())
+		crate::nbt::format::write_list(
+			f,
+			self,
+			false,
+			crate::nbt::format::Indentation::tabs(),
+			true
+		)
 	}
 }
 
 impl Display for NamedTag {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		use crate::nbt::format::*;
 		writeln!(f, "{{")?;
 		f.write_fmt(format_args!("{:#?}", self))?;
-		let indent = Indentation::tabs().indent();
+		let indent = crate::nbt::format::Indentation::tabs().indent();
 		write!(f, "{indent}")?;
-		write_tag(f, &self.tag, false, indent);
+		crate::nbt::format::write_identifier(f, self.name())?;
+		write!(f, " : ")?;
+		crate::nbt::format::write_tag(
+			f,
+			&self.tag,
+			false,
+			indent,
+			true
+		)?;
 		write!(f, "\n}}")
 	}
 }

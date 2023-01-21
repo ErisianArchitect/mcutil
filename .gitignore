@@ -1,4 +1,8 @@
 /target
 /Cargo.lock
 /ignore
+*.ignore
+*.ignore.*
+# Specific files.
+go.bat
 minecraft

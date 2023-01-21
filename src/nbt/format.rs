@@ -38,7 +38,7 @@ macro_rules! array_writer {
 		{
 			if $array.len() > 0 {
 				// If there is only one item, we will write it on the same line.
-				if $sameline || $array.len() == 1{
+				if $sameline {
 					write!($writer, "[{}; ", stringify!($prefix))?;
 					write!($writer, "{}", $array[0])?;
 					// $(write!($writer, "{}", stringify!($suffix))?;)?
@@ -93,18 +93,18 @@ pub fn write_string<W: Write>(writer: &mut W, value: &str) -> std::fmt::Result {
 	write!(writer, "\"")
 }
 
-pub fn write_list<W: Write>(writer: &mut W, value: &ListTag, sameline: bool, indentation: Indentation) -> std::fmt::Result {
+pub fn write_list<W: Write>(writer: &mut W, value: &ListTag, sameline: bool, indentation: Indentation, sort_keys: bool) -> std::fmt::Result {
 	macro_rules! write_func {
 		($writer:ident, $list:ident, $sameline:ident, $indentation: ident: $func:ident($($arg:expr),*)$([$ref:tt])?) => {
 			{
 				write!($writer, "[")?;
-				if !$sameline && $list.len() > 1 {
+				if !$sameline {
 					write!($writer, "\n")?;
 				}
 				let last_index = $list.len() - 1;
 				$list.iter().enumerate().try_for_each(|(index, value)| {
 					// write_byte($writer, *value)?;
-					if !$sameline && $list.len() >= 1 {
+					if !$sameline {
 						write!($writer, "{}", $indentation)?;
 					}
 					$func(writer, $($ref)?value, $($arg),*)?;
@@ -114,12 +114,12 @@ pub fn write_list<W: Write>(writer: &mut W, value: &ListTag, sameline: bool, ind
 							write!($writer, " ")?;
 						}
 					}
-					if !$sameline && $list.len() > 1{
+					if !$sameline {
 						write!($writer, "\n")?;
 					}
 					Ok(())
 				})?;
-				if !$sameline && $list.len() >= 1 {
+				if !$sameline {
 					write!($writer, "{}", $indentation.outdent())?;
 				}
 				write!($writer, "]")
@@ -137,8 +137,8 @@ pub fn write_list<W: Write>(writer: &mut W, value: &ListTag, sameline: bool, ind
 		ListTag::Double(list) => write_func!(writer, list, sameline, indent: write_double()[*]),
 		ListTag::ByteArray(list) => write_func!(writer, list, sameline, indent: write_bytearray(sameline, indent)),
 		ListTag::String(list) => write_func!(writer, list, sameline, indent: write_string()),
-		ListTag::List(list) => write_func!(writer, list, sameline, indent: write_list(sameline, indent)),
-		ListTag::Compound(list) => write_func!(writer, list, sameline, indent: write_compound(sameline, indent)),
+		ListTag::List(list) => write_func!(writer, list, sameline, indent: write_list(sameline, indent, sort_keys)),
+		ListTag::Compound(list) => write_func!(writer, list, sameline, indent: write_compound(sameline, indent, sort_keys)),
 		ListTag::IntArray(list) => write_func!(writer, list, sameline, indent: write_intarray(sameline, indent)),
 		ListTag::LongArray(list) => write_func!(writer, list, sameline, indent: write_longarray(sameline, indent)),
 	}
@@ -152,18 +152,29 @@ pub fn write_identifier<W: Write>(writer: &mut W, ident: &str) -> std::fmt::Resu
 	}
 }
 
-pub fn write_compound<W: Write>(writer: &mut W, value: &crate::nbt::Map, sameline: bool, indentation: Indentation) -> std::fmt::Result {
+pub fn write_compound<W: Write>(writer: &mut W, value: &crate::nbt::Map, sameline: bool, indentation: Indentation, sort_keys: bool) -> std::fmt::Result {
 	use crate::nbt::tag::*;
 	if value.is_empty() {
 		write!(writer, "{{}}")
 	} else {
-		write!(writer, "{{ ")?;
-		if !sameline {
+		write!(writer, "{{")?;
+		if sameline {
+			write!(writer, " ")?;
+		} else {
 			write!(writer, "\n")?;
 		}
 		let last_index = value.len() - 1;
 		let indent = indentation.indent();
-		value.iter().enumerate().try_for_each(|(index, (key, tag))| {
+		let tags: Vec<(&String, &Tag)> = {
+			let mut tags: Vec<(&String, &Tag)> = value.iter().collect();
+			if sort_keys {
+				tags.sort_by_key(|(key, _)| {
+					key.to_owned()
+				});
+			}
+			tags
+		};
+		tags.iter().enumerate().try_for_each(|(index, (key, tag))| {
 			if !sameline {
 				write!(writer, "{}", indent)?;
 			}
@@ -178,8 +189,8 @@ pub fn write_compound<W: Write>(writer: &mut W, value: &crate::nbt::Map, samelin
 				Tag::Double(value) => write_double(writer, *value),
 				Tag::ByteArray(array) => write_bytearray(writer, array, sameline, indent),
 				Tag::String(value) => write_string(writer, value),
-				Tag::List(value) => write_list(writer, value, sameline, indent),
-				Tag::Compound(value) => write_compound(writer, value, sameline, indent),
+				Tag::List(value) => write_list(writer, value, sameline, indent, sort_keys),
+				Tag::Compound(value) => write_compound(writer, value, sameline, indent, sort_keys),
 				Tag::IntArray(array) => write_intarray(writer, array, sameline, indent),
 				Tag::LongArray(array) => write_longarray(writer, array, sameline, indent),
 			}?;
@@ -193,17 +204,16 @@ pub fn write_compound<W: Write>(writer: &mut W, value: &crate::nbt::Map, samelin
 			}
 			Ok(())
 		})?;
-		if !sameline {
-			write!(writer, "\n{}", indentation)?;
-		}
 		if sameline {
 			write!(writer, " ")?;
+		} else {
+			write!(writer, "\n{}", indentation)?;
 		}
 		write!(writer, "}}")
 	}
 }
 
-pub fn write_tag<W: Write>(writer: &mut W, tag: &crate::nbt::tag::Tag, sameline: bool, indentation: Indentation) -> std::fmt::Result {
+pub fn write_tag<W: Write>(writer: &mut W, tag: &crate::nbt::tag::Tag, sameline: bool, indentation: Indentation, sort_keys: bool) -> std::fmt::Result {
 	use crate::nbt::tag::Tag;
 	match tag {
 		Tag::Byte(value) => write_byte(writer, *value),
@@ -214,14 +224,12 @@ pub fn write_tag<W: Write>(writer: &mut W, tag: &crate::nbt::tag::Tag, sameline:
 		Tag::Double(value) => write_double(writer, *value),
 		Tag::ByteArray(array) => write_bytearray(writer, array, sameline, indentation),
 		Tag::String(value) => write_string(writer, value),
-		Tag::List(list) => write_list(writer, list, sameline, indentation),
-		Tag::Compound(compound) => write_compound(writer, compound, sameline, indentation),
+		Tag::List(list) => write_list(writer, list, sameline, indentation, sort_keys),
+		Tag::Compound(compound) => write_compound(writer, compound, sameline, indentation, sort_keys),
 		Tag::IntArray(array) => write_intarray(writer, array, sameline, indentation),
 		Tag::LongArray(array) => write_longarray(writer, array, sameline, indentation),
 	}
 }
-
-
 
 /// Measures the length of the resulting string if `n` were converted to a string.
 // const fn num_width(n: i64) -> usize {
@@ -523,7 +531,7 @@ mod tests {
 		"#;
 		if let Ok(Tag::Compound(compound)) = Tag::parse(snbt) {
 			let mut text = String::new();
-			write_compound(&mut text, &compound, false, Indentation::tabs());
+			write_compound(&mut text, &compound, false, Indentation::tabs(), true);
 			use std::io::Write as WriteIO;
 			write!(file, "{}", text);
 		}
