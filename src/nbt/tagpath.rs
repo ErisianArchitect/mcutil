@@ -1,3 +1,5 @@
+use std::fmt::{Display, Debug};
+use std::ops::Index;
 use std::slice::SliceIndex;
 use std::str::FromStr;
 
@@ -74,8 +76,10 @@ pub struct TagPath(pub Vec<TagPathPart>);
 
 impl TagPath {
 	pub fn parse<S: AsRef<str>>(source: S) -> Result<Self, TagPathError> {
-		let tokens = TagPathToken::parse(source).map_err(TagPathError::TokenizeError)?;
-		let path = tag_path_parser().parse(tokens).map_err(TagPathError::ParseError)?;
+		let tokens = TagPathToken::parse(source)
+			.map_err(TagPathError::TokenizeError)?;
+		let path = tag_path_parser().parse(tokens)
+			.map_err(TagPathError::ParseError)?;
 		Ok(Self(path))
 	}
 
@@ -231,4 +235,46 @@ fn tag_path_parser() -> impl Parser<TagPathToken, Vec<TagPathPart>, Error = Simp
 		ident.chain(part.clone().repeated().then_ignore(end())),
 		part.repeated().then_ignore(end())
 	))
+}
+
+impl Display for TagPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut remaining = self.0.as_slice();
+		if remaining.len() > 0 {
+			match &remaining[0] {
+				TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
+				TagPathPart::AtKey(key) => {
+					if crate::nbt::format::is_identifier(key) {
+						write!(f, "{key}")?;
+					} else {
+						write!(f, "[\"")?;
+						crate::nbt::format::write_escaped_string(f, key)?;
+						write!(f, "\"]")?;
+					}
+				},
+			}
+			remaining = &remaining[1..];
+			while !remaining.is_empty() {
+				match &remaining[0] {
+					TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
+					TagPathPart::AtKey(key) => {
+						if crate::nbt::format::is_identifier(key) {
+							write!(f, ".{key}")?;
+						} else {
+							write!(f, "[\'")?;
+							crate::nbt::format::write_escaped_string(f, key)?;
+							write!(f, "\']")?;
+						}
+					},
+				}
+				remaining = &remaining[1..];
+			}
+		}
+		Ok(())
+    }
+}
+
+pub trait GetChild {
+	type ReturnType;
+	fn get_child(&self) -> Self::ReturnType;
 }

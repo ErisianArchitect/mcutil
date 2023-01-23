@@ -67,23 +67,6 @@ pub enum Tag {
 	LongArray(std::vec::Vec<i64>) = 12,
 }
 
-#[doc = "The NBT tag type ID."]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub enum TagID {
-	Byte = 1,
-	Short = 2,
-	Int = 3,
-	Long = 4,
-	Float = 5,
-	Double = 6,
-	ByteArray = 7,
-	String = 8,
-	List = 9,
-	Compound = 10,
-	IntArray = 11,
-	LongArray = 12,
-}
-
 #[doc = "Enum type for [Tag::List]."]
 #[derive(Clone, Debug)]
 #[repr(isize)]
@@ -102,6 +85,23 @@ pub enum ListTag {
 	Compound(Vec<crate::nbt::Map>) = 10,
 	IntArray(Vec<std::vec::Vec<i32>>) = 11,
 	LongArray(Vec<std::vec::Vec<i64>>) = 12,
+}
+
+#[doc = "The NBT tag type ID."]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum TagID {
+	Byte = 1,
+	Short = 2,
+	Int = 3,
+	Long = 4,
+	Float = 5,
+	Double = 6,
+	ByteArray = 7,
+	String = 8,
+	List = 9,
+	Compound = 10,
+	IntArray = 11,
+	LongArray = 12,
 }
 
 impl TagID {

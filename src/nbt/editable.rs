@@ -210,35 +210,31 @@ impl From<&ListTag> for Editable<EditableListTag> {
 
 impl From<MapType<Tag>> for Editable<EditableMap> {
     fn from(value: MapType<Tag>) -> Self {
-        Editable::new(
-			{
-				let mut result = EditableMap::new();
-				value.iter().for_each(|(key, tag)| {
-					result.insert(
-						key.to_owned(),
-						Editable::new(EditableTag::from(tag.clone()))
-					);
-				});
-				result
-			}
-		)
+        Editable::new({
+			let mut result = EditableMap::new();
+			value.iter().for_each(|(key, tag)| {
+				result.insert(
+					key.to_owned(),
+					Editable::new(EditableTag::from(tag.clone()))
+				);
+			});
+			result
+		})
     }
 }
 
 impl From<&MapType<Tag>> for Editable<EditableMap> {
     fn from(value: &MapType<Tag>) -> Self {
-        Editable::new(
-			{
-				let mut result = EditableMap::new();
-				value.iter().for_each(|(key, tag)| {
-					result.insert(
-						key.to_owned(),
-						Editable::new(EditableTag::from(tag.clone()))
-					);
-				});
-				result
-			}
-		)
+        Editable::new({
+			let mut result = EditableMap::new();
+			value.iter().for_each(|(key, tag)| {
+				result.insert(
+					key.to_owned(),
+					Editable::new(EditableTag::from(tag.clone()))
+				);
+			});
+			result
+		})
     }
 }
 

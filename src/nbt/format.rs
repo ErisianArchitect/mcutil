@@ -251,7 +251,10 @@ pub fn write_tag<W: Write>(writer: &mut W, tag: &crate::nbt::tag::Tag, sameline:
 // 	}
 // }
 
-fn is_identifier(value: &str) -> bool {
+pub(crate) fn is_identifier(value: &str) -> bool {
+	if value.len() == 0 {
+		return false;
+	}
 	value.chars().try_for_each(|c| {
 		if c.is_ascii_alphanumeric() || "+-_.".contains(c) {
 			Ok(())
@@ -261,7 +264,7 @@ fn is_identifier(value: &str) -> bool {
 	}).is_ok()
 }
 
-fn write_escaped_string<S: AsRef<str>, W: Write>(writer: &mut W, unescaped: S) -> std::fmt::Result {
+pub(crate) fn write_escaped_string<S: AsRef<str>, W: Write>(writer: &mut W, unescaped: S) -> std::fmt::Result {
 	// Macros make the whole world better!
 	macro_rules! match_char {
 		($buffer:expr, $input:expr; $($tok:tt => $escaped:expr),+) => {

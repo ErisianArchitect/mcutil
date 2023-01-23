@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::process::Child;
 
 use chumsky::primitive::todo;
@@ -11,6 +12,41 @@ use crate::nbt::tagpath;
 use crate::nbt::tagtype::*;
 
 use super::tagpath::TagPathPart;
+
+
+
+#[derive(Clone, Copy)]
+#[repr(isize)]
+pub enum ValueRef<'a> {
+	Byte(&'a Byte) = 1,
+	Short(&'a Short) = 2,
+	Int(&'a Int) = 3,
+	Long(&'a Long) = 4,
+	Float(&'a Float) = 5,
+	Double(&'a Double) = 6,
+	ByteArray(&'a ByteArray) = 7,
+	String(&'a String) = 8,
+	List(&'a ListTag) = 9,
+	Compound(&'a Compound) = 10,
+	IntArray(&'a IntArray) = 11,
+	LongArray(&'a LongArray) = 12,
+}
+
+#[repr(isize)]
+pub enum ValueRefMut<'a> {
+	Byte(&'a mut Byte) = 1,
+	Short(&'a mut Short) = 2,
+	Int(&'a mut Int) = 3,
+	Long(&'a mut Long) = 4,
+	Float(&'a mut Float) = 5,
+	Double(&'a mut Double) = 6,
+	ByteArray(&'a mut ByteArray) = 7,
+	String(&'a mut String) = 8,
+	List(&'a mut ListTag) = 9,
+	Compound(&'a mut Compound) = 10,
+	IntArray(&'a mut IntArray) = 11,
+	LongArray(&'a mut LongArray) = 12,
+}
 
 // So the idea is that a TagPath can be used to access elements/values within
 // a Tag.
@@ -75,7 +111,6 @@ macro_rules! get_child_in_array {
 			}
 		}
 	};
-
 }
 
 macro_rules! get_child_dry {
@@ -153,103 +188,147 @@ macro_rules! find_child_dry {
 }
 
 impl<'a> ValueRef<'a> {
-	pub fn get_child<'b>(&'b self, at: &TagPathPart) -> Option<ValueRef<'a>> {
+	pub fn get_child(self, at: &TagPathPart) -> Option<ValueRef<'a>> {
 		get_child_dry!(self:ValueRef at => ValueRef)
 	}
-}
 
-impl Tag {
-	pub fn get_child<'a>(&'a self, at: &TagPathPart) -> Option<ValueRef<'a>> {
-		get_child_dry!(self:Tag at => ValueRef)
-	}
-
-	pub fn get_child_mut<'a>(&'a mut self, at: &TagPathPart) -> Option<ValueRefMut<'a>> {
-		get_child_dry!(self:Tag at => &mut ValueRefMut)
-	}
-
-	pub fn find_child<'a>(&'a self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
+	fn find_child(self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
 		if path.is_empty() {
 			return None;
 		}
 		let mut walker: Option<ValueRef<'a>> = self.get_child(&path[0]);
 		let mut path_remaining = &path[1..];
-		while !path_remaining.is_empty() && walker.is_some() {
-			walker = walker.and_then(|result| result.get_child(&path_remaining[0]));
-			path_remaining = &path_remaining[1..];
+		for part in path_remaining {
+			let Some(next) = walker else { break };
+			walker = next.get_child(part);
 		}
 		walker
 	}
+}
 
-	// fn find_child_mut<'a>(&'a mut self, path: &[TagPathPart]) -> Option<ValueRefMut<'a>> {
-	// 	if path.is_empty() {
-	// 		return None;
-	// 	}
-	// 	let mut walker: Option<ValueRefMut<'a>> = self.get_child_mut(&path[0]);
-	// 	let mut path_remaining = &path[1..];
-	// 	while !path_remaining.is_empty() && walker.is_some() {
-	// 		walker = walker.and_then(|mut result| result.get_child_mut(&path_remaining[0]));
-	// 		path_remaining = &path_remaining[1..];
-	// 	}
-	// 	walker
-	// }
-
+fn _set_child_at_index(node: ValueRefMut<'_>, index: i64, value: Tag) -> Result<(), ()> {
+	macro_rules! set_child {
+		($array:ident[$index:ident] = $variant:ident($value:ident)) => {
+			{
+				let Tag::$variant(value) = $value else { return Err(()) };
+				// If index is negative, we want to index from the end.
+				// That means subtracting index from array.len() and hoping
+				// that it doesn't go into the negatives again.
+				let index = if $index < 0 {
+					$array.len() as i64 - $index.abs()
+				} else {
+					$index
+				};
+				if index < 0 || index >= ($array.len() as i64) {
+					return Err(());
+				}
+				$array[index as usize] = value;
+				Ok(())
+			}
+		};
+	}
+	match node {
+		ValueRefMut::ByteArray(array) if value.id() == TagID::Byte => set_child!(array[index] = Byte(value)),
+		ValueRefMut::IntArray(array) if value.id() == TagID::Int => set_child!(array[index] = Int(value)),
+		ValueRefMut::LongArray(array) if value.id() == TagID::Long => set_child!(array[index] = Long(value)),
+		ValueRefMut::List(list) => match list {
+			ListTag::Byte(array) if value.id() == TagID::Byte => set_child!(array[index] = Byte(value)),
+			ListTag::Short(array) if value.id() == TagID::Short => set_child!(array[index] = Short(value)),
+			ListTag::Int(array) if value.id() == TagID::Int => set_child!(array[index] = Int(value)),
+			ListTag::Long(array) if value.id() == TagID::Long => set_child!(array[index] = Long(value)),
+			ListTag::Float(array) if value.id() == TagID::Float => set_child!(array[index] = Float(value)),
+			ListTag::Double(array) if value.id() == TagID::Double => set_child!(array[index] = Double(value)),
+			ListTag::ByteArray(array) if value.id() == TagID::ByteArray => set_child!(array[index] = ByteArray(value)),
+			ListTag::String(array) if value.id() == TagID::String => set_child!(array[index] = String(value)),
+			ListTag::List(array) if value.id() == TagID::List => set_child!(array[index] = List(value)),
+			ListTag::Compound(array) if value.id() == TagID::Compound => set_child!(array[index] = Compound(value)),
+			ListTag::IntArray(array) if value.id() == TagID::IntArray => set_child!(array[index] = IntArray(value)),
+			ListTag::LongArray(array) if value.id() == TagID::LongArray => set_child!(array[index] = LongArray(value)),
+			_ => Err(()),
+		},
+		_ => Err(()),
+	}
 }
 
 impl<'a> ValueRefMut<'a> {
-    fn get_child(&'a self, at: &TagPathPart) -> Option<ValueRef<'a>> {
-        get_child_dry!(self:ValueRefMut at => ValueRef)
-    }
+	pub fn get_child(self, at: &TagPathPart) -> Option<ValueRef<'a>> {
+		// get_child_dry!(self:ValueRefMut at => ValueRef)
+		ValueRef::from(self).get_child(at)
+	}
 
-    fn get_child_mut(&'a mut self, at: &TagPathPart) -> Option<ValueRefMut<'a>> {
-        get_child_dry!(self:ValueRefMut at => &mut ValueRefMut)
-    }
+	pub fn get_child_mut(self, at: &TagPathPart) -> Option<ValueRefMut<'a>> {
+		get_child_dry!(self:ValueRefMut at => &mut ValueRefMut)
+	}
 
-	fn find_child(&'a self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
+	pub fn find_child(self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
+		let valref = ValueRef::from(self);
+		valref.find_child(path)
+	}
+
+	pub fn find_child_mut(self, path: &[TagPathPart]) -> Option<ValueRefMut<'a>> {
 		if path.is_empty() {
 			return None;
 		}
-		let mut walker: Option<ValueRef<'a>> = self.get_child(&path[0]);
+		let mut walker: Option<ValueRefMut<'a>> = self.get_child_mut(&path[0]);
 		let mut path_remaining = &path[1..];
-		while !path_remaining.is_empty() && walker.is_some() {
-			walker = walker.and_then(|result| result.get_child(&path_remaining[0]));
-			path_remaining = &path_remaining[1..];
+		for part in path_remaining {
+			let Some(next) = walker else { break };
+			walker = next.get_child_mut(part);
 		}
 		walker
 	}
 
+	pub fn set_child<T: Into<Tag>>(self, path: &[TagPathPart], value: T) -> Result<(),()> {
+		/*
+		First, take all path parts from path except final part.
+		Then find mutable node at that path.
+		Then attempt to inject value at final path part in node.
+		*/
+		if path.is_empty() {
+			return Err(())
+		}
+		let Some((last, first)) = path.split_last() else { return Err(()) };
+		let Some(node) = self.find_child_mut(first) else { return Err(()) };
+		let value: Tag = value.into();
+		match last {
+			&TagPathPart::AtIndex(index) => {
+				_set_child_at_index(node, index, value)
+			},
+			TagPathPart::AtKey(key) => {
+				match node {
+					ValueRefMut::Compound(map) => {
+						map.insert(key.to_owned(), value);
+						Ok(())
+					},
+					_ => Err(()),
+				}
+			},
+		}
+	}
+
 }
 
-#[derive(Clone, Copy)]
-#[repr(isize)]
-pub enum ValueRef<'a> {
-	Byte(&'a Byte) = 1,
-	Short(&'a Short) = 2,
-	Int(&'a Int) = 3,
-	Long(&'a Long) = 4,
-	Float(&'a Float) = 5,
-	Double(&'a Double) = 6,
-	ByteArray(&'a ByteArray) = 7,
-	String(&'a String) = 8,
-	List(&'a ListTag) = 9,
-	Compound(&'a Compound) = 10,
-	IntArray(&'a IntArray) = 11,
-	LongArray(&'a LongArray) = 12,
-}
+impl Tag {
+	pub fn get_child(&self, at: &TagPathPart) -> Option<ValueRef<'_>> {
+		ValueRef::from(self).get_child(at)
+	}
 
-#[repr(isize)]
-pub enum ValueRefMut<'a> {
-	Byte(&'a mut Byte) = 1,
-	Short(&'a mut Short) = 2,
-	Int(&'a mut Int) = 3,
-	Long(&'a mut Long) = 4,
-	Float(&'a mut Float) = 5,
-	Double(&'a mut Double) = 6,
-	ByteArray(&'a mut ByteArray) = 7,
-	String(&'a mut String) = 8,
-	List(&'a mut ListTag) = 9,
-	Compound(&'a mut Compound) = 10,
-	IntArray(&'a mut IntArray) = 11,
-	LongArray(&'a mut LongArray) = 12,
+	pub fn get_child_mut(&mut self, at: &TagPathPart) -> Option<ValueRefMut<'_>> {
+		ValueRefMut::from(self).get_child_mut(at)
+	}
+
+	pub fn find_child(&self, path: &[TagPathPart]) -> Option<ValueRef<'_>> {
+		ValueRef::from(self).find_child(path)
+	}
+
+	pub fn find_child_mut(&mut self, path: &[TagPathPart]) -> Option<ValueRefMut<'_>> {
+		ValueRefMut::from(self).find_child_mut(path)
+	}
+
+	pub fn set_child<T: Into<Tag>>(&mut self, path: &[TagPathPart], value: T) -> Result<(),()> {
+		ValueRefMut::from(self).set_child(path, value)
+	}
+
 }
 
 impl<'a> From<&'a mut Tag> for ValueRefMut<'a> {
@@ -290,15 +369,34 @@ impl<'a> From<&'a Tag> for ValueRef<'a> {
 	}
 }
 
+impl<'a> From<ValueRefMut<'a>> for ValueRef<'a> {
+	fn from(value: ValueRefMut<'a>) -> Self {
+		match value {
+			ValueRefMut::Byte(value) => ValueRef::Byte(value),
+			ValueRefMut::Short(value) => ValueRef::Short(value),
+			ValueRefMut::Int(value) => ValueRef::Int(value),
+			ValueRefMut::Long(value) => ValueRef::Long(value),
+			ValueRefMut::Float(value) => ValueRef::Float(value),
+			ValueRefMut::Double(value) => ValueRef::Double(value),
+			ValueRefMut::ByteArray(value) => ValueRef::ByteArray(value),
+			ValueRefMut::String(value) => ValueRef::String(value),
+			ValueRefMut::List(value) => ValueRef::List(value),
+			ValueRefMut::Compound(value) => ValueRef::Compound(value),
+			ValueRefMut::IntArray(value) => ValueRef::IntArray(value),
+			ValueRefMut::LongArray(value) => ValueRef::LongArray(value),
+		}
+	}
+}
+
 impl<'a> From<ValueRef<'a>> for Tag {
 	fn from(value: ValueRef<'a>) -> Self {
 		match value {
-			ValueRef::Byte(val) => Tag::Byte(val.clone()),
-			ValueRef::Short(val) => Tag::Short(val.clone()),
-			ValueRef::Int(val) => Tag::Int(val.clone()),
-			ValueRef::Long(val) => Tag::Long(val.clone()),
-			ValueRef::Float(val) => Tag::Float(val.clone()),
-			ValueRef::Double(val) => Tag::Double(val.clone()),
+			ValueRef::Byte(val) => Tag::Byte(*val),
+			ValueRef::Short(val) => Tag::Short(*val),
+			ValueRef::Int(val) => Tag::Int(*val),
+			ValueRef::Long(val) => Tag::Long(*val),
+			ValueRef::Float(val) => Tag::Float(*val),
+			ValueRef::Double(val) => Tag::Double(*val),
 			ValueRef::ByteArray(val) => Tag::ByteArray(val.clone()),
 			ValueRef::String(val) => Tag::String(val.clone()),
 			ValueRef::List(val) => Tag::List(val.clone()),
@@ -307,4 +405,23 @@ impl<'a> From<ValueRef<'a>> for Tag {
 			ValueRef::LongArray(val) => Tag::LongArray(val.clone()),
 		}
 	}
+}
+
+impl<'a> From<ValueRefMut<'a>> for Tag {
+    fn from(value: ValueRefMut<'a>) -> Self {
+        match value {
+			ValueRefMut::Byte(val) => Tag::Byte(*val),
+			ValueRefMut::Short(val) => Tag::Short(*val),
+			ValueRefMut::Int(val) => Tag::Int(*val),
+			ValueRefMut::Long(val) => Tag::Long(*val),
+			ValueRefMut::Float(val) => Tag::Float(*val),
+			ValueRefMut::Double(val) => Tag::Double(*val),
+			ValueRefMut::ByteArray(val) => Tag::ByteArray(val.clone()),
+			ValueRefMut::String(val) => Tag::String(val.clone()),
+			ValueRefMut::List(val) => Tag::List(val.clone()),
+			ValueRefMut::Compound(val) => Tag::Compound(val.clone()),
+			ValueRefMut::IntArray(val) => Tag::IntArray(val.clone()),
+			ValueRefMut::LongArray(val) => Tag::LongArray(val.clone()),
+        }
+    }
 }

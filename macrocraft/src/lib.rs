@@ -34,37 +34,19 @@ use syn::{
 	visit,
 };
 
+// struct visitor {
+
+// }
+
+// impl visit_mut::VisitMut for visitor {
+// 	fn visit_block_mut(&mut self, i: &mut Block) {
+
+// 	}
+// }
+
+
 #[proc_macro]
 pub fn nbt(input: TokenStream) -> TokenStream {
-	macro_rules! mac {
-		($($($name:literal)?$(($name_expr:expr))? : $value:expr),+) => {
-			mac!{{$($($name)?$($name_expr)? : $value,)+}}
-		};
-		({$($($name:literal)?$(($name_expr:expr))? : $value:expr),+}) => {
-			$(println!("{}", $value);)+
-		};
-		([$($prefix:ident;)?$($value:expr),*]) => {
-
-		};
-		($($value:expr),+) => {
-
-		};
-		($array_prefix:ident; $($value:expr),*) => {
-
-		};
-		(@array;B; $($value:expr),*) => {
-
-		};
-		(@array;I;) => {
 	
-		};
-		(@array;L;) => {
-	
-		};
-	}
-	mac!{{
-		"test" : 1234,
-		"one" : "Hello, world!"
-	}}
 	input
 }
