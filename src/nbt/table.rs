@@ -43,4 +43,10 @@ macro_rules! tag_info_table {
 	};
 }
 
+// Python: ['Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'ByteArray', 'String', 'List', 'Compound', 'IntArray', 'LongArray']
+/*
+Byte,Short,Int,Long,Float,Double,ByteArray,String,List,Compound,IntArray,LongArray
+*/
+
 pub use tag_info_table;
+

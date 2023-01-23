@@ -14,20 +14,17 @@ pub struct BlockState {
 	properties: Option<HashMap<String, String>>,
 }
 
+pub struct BlockData {
+	palette: Vec<BlockState>,
+	data: Vec<u32>,
+}
+
 pub struct LightData {
 	data: Box<[i8; 2048]>
 }
 
 pub struct Biomes {
 	palette: Vec<String>
-}
-
-pub struct ChunkSection {
-	y: i8,
-	block_states: Option<Vec<BlockState>>,
-	biomes: Option<Biomes>,
-	skylight: Option<LightData>,
-	blocklight: Option<LightData>,
 }
 
 pub struct TileTick {
@@ -37,11 +34,6 @@ pub struct TileTick {
 	x: i32,
 	y: i32,
 	z: i32,
-}
-
-pub struct CarvingMasks {
-	air: Vec<i8>,
-	liquid: Vec<i8>,
 }
 
 pub struct HeightMaps {
@@ -70,6 +62,19 @@ pub struct Chunk {
 	block_ticks: Vec<Map>,
 	post_processing: Vec<ListTag>,
 	structures: Map,
+}
+
+pub struct ChunkSection {
+	y: i8,
+	block_states: Option<Vec<BlockData>>,
+	biomes: Option<Biomes>,
+	skylight: Option<LightData>,
+	blocklight: Option<LightData>,
+}
+
+pub struct CarvingMasks {
+	air: Vec<i8>,
+	liquid: Vec<i8>,
 }
 
 pub fn get_coord_from_chunk_nbt(tag: &Tag) -> Option<(i32, i32)> {

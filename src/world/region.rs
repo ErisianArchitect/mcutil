@@ -15,16 +15,32 @@ use std::{
 	fs::{
 		File, copy,
 	},
-	ops::{BitOr}
+	ops::{BitOr}, env::current_exe
 };
 
 use std::io::prelude::*;
+use chumsky::primitive::todo;
 use flate2::{read::GzDecoder, write::ZlibEncoder, Compression};
 use flate2::read::ZlibDecoder;
 
 use chrono::prelude::*;
 
-use crate::nbt::{tag::*, NbtError, io::{ReadNbt, WriteNbt}, io::{NbtRead, NbtWrite, NbtSize}};
+use crate::{
+	nbt::{
+		tag::*,
+		NbtError,
+		io::{
+			ReadNbt,
+			WriteNbt
+		},
+		io::{
+			NbtRead,
+			NbtWrite,
+			NbtSize
+		}
+	},
+	ioext::{*, self},
+};
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
@@ -37,8 +53,18 @@ pub enum RegionError {
 	ChunkNotPresent,
 	#[error("Invalid compression scheme.")]
 	InvalidCompressionScheme(u8),
+	#[error("Out of range error.")]
+	OutOfRangeError,
 	#[error("{0}")]
 	Other(String),
+}
+
+impl RegionError {
+	pub fn other<S: AsRef<str>,T>(error_msg: S) -> Result<T,RegionError> {
+		Err(RegionError::Other(
+			error_msg.as_ref().to_owned()
+		))
+	}
 }
 
 /*
@@ -221,20 +247,18 @@ impl RegionFileInfo {
 	}
 
 	pub fn get_offset(&self, x: i32, z: i32) -> ChunkOffset {
-		let index = RegionFile::get_index(x,z);
-		self.offsets[index as usize]
+		self.offsets[RegionFile::get_index(x,z)]
 	}
 
 	pub fn get_timestamp(&self, x: i32, z: i32) -> Timestamp {
-		let index = RegionFile::get_index(x,z);
-		self.timestamps[index as usize]
+		self.timestamps[RegionFile::get_index(x,z)]
 	}
 
 	pub fn has_chunk(&self, x: i32, z: i32) -> bool {
 		let index = RegionFile::get_index(x, z);
 		let bitword_index = index.div_euclid(64);
 		let bit_index = index.rem_euclid(64);
-		get_bit(self.present_bits[bitword_index as usize], bit_index as usize)
+		get_bit(self.present_bits[bitword_index], bit_index)
 	}
 
 	pub fn creation_time(&self) -> std::io::Result<std::time::SystemTime> {
@@ -277,8 +301,8 @@ impl RegionFile {
 
 	/// This function gets the flat index (in an array of 1024 elements) from a 32x32 grid.
 	/// This is a helper function to help find the offset in a region file where certain information is stored.
-	pub(crate) const fn get_index(x: i32, z: i32) -> i32 {
-			(x.rem_euclid(32) + (z.rem_euclid(32) * 32))
+	pub(crate) const fn get_index(x: i32, z: i32) -> usize {
+		(x.rem_euclid(32) + (z.rem_euclid(32) * 32)) as usize
 	}
 
 	/// Creates a RegionFile object with the specified path.
@@ -340,175 +364,39 @@ impl RegionFile {
 	}
 
 	pub fn delete_chunk(&self, x: i32, z: i32) -> Result<(), RegionError> {
-		self.edit_chunk(x, z, None)
+		self.edit_chunk::<WriteNothing>(x, z, None, Compression::none())
 	}
 
-	pub fn set_chunk(&self, x: i32, z: i32, chunk: &NamedTag) -> Result<(), RegionError> {
-		self.edit_chunk(x, z, Some(chunk))
+	pub fn set_chunk<T: Writable>(&self, x: i32, z: i32, chunk: &T, compression: Compression) -> Result<(), RegionError> {
+		self.edit_chunk(x, z, Some(chunk), compression)
 	}
 
 	/// Either replace or delete a chunk in a region file.
-	pub(crate) fn edit_chunk(&self, x: i32, z: i32, chunk: Option<&NamedTag>) -> Result<(), RegionError> {
+	pub(crate) fn edit_chunk<T: Writable>(&self, x: i32, z: i32, chunk: Option<&T>, compression: Compression) -> Result<(), RegionError> {
 		/*
 		The process for injecting a chunk is fairly difficult.
 		It involves rewriting the file completely. So a temporary file will need to be created.
 		Then each chunk present in the file is systematically copied over to the new file and
 		a new timestamp and chunk offset table is built.
 		*/
-		
-		/// Writes an offset to the offset table then seeks back to where it started.
-		let write_offset = |writer: &mut BufWriter<_>, offset: ChunkOffset, index: usize| -> Result<(), RegionError> {
-			let return_offset = writer.stream_position()?;
-			writer.seek(SeekFrom::Start((index * 4) as u64))?;
-			let buffer = offset.0.to_be_bytes();
-			writer.write_all(&buffer)?;
-			writer.seek(SeekFrom::Start(return_offset))?;
-			Ok(())
-		};
-
-		/// Writes a timestamp to the timestamp table then seeks back to where it started.
-		let write_timestamp = |writer: &mut BufWriter<_>, timestamp: Timestamp, index: usize| -> Result<(), RegionError> {
-			let return_offset = writer.stream_position()?;
-			writer.seek(SeekFrom::Start((index * 4 + 4096) as u64))?;
-			let buffer = timestamp.0.to_be_bytes();
-			writer.write_all(&buffer)?;
-			writer.seek(SeekFrom::Start(return_offset))?;
-			Ok(())
-		};
-
-		let copy_sectors = |count: u64, reader: &mut BufReader<File>, writer: &mut BufWriter<_>| -> Result<usize,RegionError> {
-			let mut buffer = vec![0u8; 4096];
-			for _ in 0..count {
-				reader.read_exact(&mut buffer)?;
-				writer.write_all(&buffer)?;
-			}
-			Ok((count * 4096) as usize)
-		};
-
-		let info = self.info()?;
-		// We open the region file that we plan to inject into.
-		let input: File = self.open()?;
-		// Open a temporary file to inject into.
-		let mut outputfile = tempfile::NamedTempFile::new()?;
-		let injection_index = RegionFile::get_index(x, z);
-		let mut writer = BufWriter::with_capacity(4096, outputfile);
-		let mut reader = BufReader::with_capacity(4096, input);
-		
-		{
-			let empty_sector = vec![0u8; 4096];
-			writer.write_all(&empty_sector)?;
-			writer.write_all(&empty_sector)?;
-		}
-
-		let mut current_sector = 2;
-		for i in 0..1024 {
-			match i {
-				injection_index => {
-					// If there isn't a chunk, that means that we want to inject nothing, effectively deleting the chunk
-					// if it exists in the file.
-					if let Some(chunk) = chunk {
-						let sector_offset = current_sector;
-						// Inject the chunk into the file
-						let mut buffer = Vec::new();
-						let mut compressor = ZlibEncoder::new(buffer, Compression::best());
-
-						println!("Chunk size: {}", chunk.nbt_size());
-
-						compressor.write_nbt(chunk)?;
-						// chunk.nbt_write(&mut compressor)?;
-						buffer = compressor.finish()?;
-						let length = buffer.len() as u32;
-						
-						println!("Buffer size: {}", length);
-
-						let length_buffer = length.to_be_bytes();
-						writer.write(&length_buffer)?;
-						writer.write(&buffer)?;
-						let required_sectors = RegionFile::required_sectors((buffer.len() as u64) + 4);
-						let padsize = (required_sectors * 4096) - (length + 4) as u64;
-						let pad = vec![0u8; padsize as usize];
-						writer.write_all(&pad)?;
-						let newoffset = ChunkOffset::new(sector_offset, required_sectors as u8);
-						let newtimestamp = Timestamp::now();
-						write_offset(&mut writer, newoffset, i)?;
-						write_timestamp(&mut writer, newtimestamp, i)?;
-						current_sector += newoffset.sector_count() as u32;
-					}
-				},
-				_ => {
-					// Seek to the offset in the reader where the chunk is stored.
-					let offset = info.offsets[i];
-					if !offset.empty() {
-						let sector_count = offset.sector_count();
-						reader.seek(SeekFrom::Start(offset.offset()))?;
-						copy_sectors(offset.sector_count(), &mut reader, &mut writer);
-						write_timestamp(&mut writer, info.timestamps[i], i)?;
-						write_offset(&mut writer, ChunkOffset::new(current_sector, sector_count as u8), i)?;
-						current_sector += offset.sector_count() as u32;
-					}
-				}
-			}
-		}
-		let output = writer.get_ref().path();
-		std::fs::copy(output, self.path())?;
-		Ok(())
+		self.edit_chunks([((x, z), chunk)], compression)
 	}
 
 	/// 
-	pub fn save_chunks<'a, It: IntoIterator<Item = ((i32, i32), &'a NamedTag)>>(&self, it: It) -> Result<(), RegionError> {
-		/*
-		In order to save the chunks, we will need to store a map of the chunks that we want to save.
-		We can do that with a 1024 element vec.
-		*/
+	pub fn edit_chunks<'a,T: Writable + 'a,  It: IntoIterator<Item = ((i32, i32), Option<&'a T>)>>(&self, it: It, compression: Compression) -> Result<(), RegionError> {
 		let map = {
-			let mut map: Vec<Option<&'a NamedTag>> = vec![None; 1024];
+			let mut map: Vec<Option<Option<&'a T>>> = vec![None; 1024];
 			it.into_iter().try_for_each(|((x, z), tag)| {
-				let index = RegionFile::get_index(x, z) as usize;
+				let index = RegionFile::get_index(x, z);
 				// Check if the chunk has already been assigned. This means that we are trying to save
 				// two chunks to the same location, which is an error.
-				if map[index as usize].is_some() {
+				if map[index].is_some() {
 					return Err(RegionError::Other("Attempting to save two chunks to the same location. Eventually this error will be more detailed.".to_owned()));
 				}
-				map[index as usize] = Some(tag);
+				map[index] = Some(tag);
 				Ok(())
 			})?;
 			map
-		};
-
-		/*
-		The process for injecting a chunk is fairly difficult.
-		It involves rewriting the file completely. So a temporary file will need to be created.
-		Then each chunk present in the file is systematically copied over to the new file and
-		a new timestamp and chunk offset table is built.
-		*/
-		
-		/// Writes an offset to the offset table then seeks back to where it started.
-		let write_offset = |writer: &mut BufWriter<File>, offset: ChunkOffset, index: usize| -> Result<(), RegionError> {
-			let return_offset = writer.stream_position()?;
-			writer.seek(SeekFrom::Start((index * 4) as u64))?;
-			let buffer = offset.0.to_be_bytes();
-			writer.write_all(&buffer)?;
-			writer.seek(SeekFrom::Start(return_offset))?;
-			Ok(())
-		};
-
-		/// Writes a timestamp to the timestamp table then seeks back to where it started.
-		let write_timestamp = |writer: &mut BufWriter<File>, timestamp: Timestamp, index: usize| -> Result<(), RegionError> {
-			let return_offset = writer.stream_position()?;
-			writer.seek(SeekFrom::Start((index * 4 + 4096) as u64))?;
-			let buffer = timestamp.0.to_be_bytes();
-			writer.write_all(&buffer)?;
-			writer.seek(SeekFrom::Start(return_offset))?;
-			Ok(())
-		};
-
-		let copy_sectors = |count: u64, reader: &mut BufReader<File>, writer: &mut BufWriter<File>| -> Result<usize,RegionError> {
-			let mut buffer = vec![0u8; 4096];
-			for _ in 0..count {
-				reader.read_exact(&mut buffer)?;
-				writer.write_all(&buffer)?;
-			}
-			Ok((count * 4096) as usize)
 		};
 
 		let info = self.info()?;
@@ -516,56 +404,43 @@ impl RegionFile {
 		let input: File = self.open()?;
 		// Open a temporary file to inject into.
 		let outputfile = tempfile::NamedTempFile::new()?;
-		let templocation = outputfile.path().to_owned();
-		let mut output: File = outputfile.into_file();
-		output.set_len(4096)?;
-		let mut writer = BufWriter::with_capacity(4096, output);
+		let mut writer = BufWriter::with_capacity(4096, outputfile);
 		let mut reader = BufReader::with_capacity(4096, input);
-		writer.seek(SeekFrom::Start(4096*2))?;
+		
+		_write_blank_region_header(&mut writer)?;
 
 		let mut current_sector = 2;
 		for i in 0..1024 {
 			match map[i] {
-				Some(chunk) => {
-					let sector_offset = current_sector;
-					// Inject the chunk into the file
-					let mut buffer = Vec::new();
-					let mut compressor = ZlibEncoder::new(buffer, Compression::best());
-					chunk.nbt_write(&mut compressor)?;
-					buffer = compressor.finish()?;
-					let length = buffer.len() as u32;
-					let length_buffer = length.to_be_bytes();
-					writer.write(&length_buffer)?;
-					writer.write(&buffer)?;
-					let required_sectors = RegionFile::required_sectors((buffer.len() as u64) + 4);
-					let padsize = (required_sectors * 4096) - (length + 4) as u64;
-					let pad = vec![0u8; padsize as usize];
-					writer.write_all(&pad)?;
-					let newoffset = ChunkOffset::new(sector_offset, required_sectors as u8);
-					let newtimestamp = Timestamp::now();
-					write_offset(&mut writer, newoffset, i)?;
-					write_timestamp(&mut writer, newtimestamp, i)?;
-					current_sector += newoffset.sector_count() as u32;
+				Some(Some(chunk)) => {
+					current_sector = _write_chunk_data(
+						current_sector,
+						&mut writer,
+						i,
+						chunk,
+						compression,
+					)?;
 				},
 				None => {
-					// Seek to the offset in the reader where the chunk is stored.
-					let offset = info.offsets[i];
-					if !offset.empty() {
-						let sector_count = offset.sector_count();
-						reader.seek(SeekFrom::Start(offset.offset()))?;
-						copy_sectors(offset.sector_count(), &mut reader, &mut writer);
-						write_offset(&mut writer, ChunkOffset::new(current_sector, sector_count as u8), i)?;
-						current_sector += offset.sector_count() as u32;
-					}
+					current_sector = _copy_chunk_data(
+						current_sector,
+						&mut reader,
+						&mut writer,
+						i,
+						info.offsets[i],
+						info.timestamps[i],
+					)?;
 				},
+				_ => (),
 			}
 		}
-		std::fs::copy(templocation, self.path())?;
+		let output = writer.get_ref().path();
+		std::fs::copy(output, self.path())?;
 		Ok(())
 	}
 
 	/// Counts the number of sectors required to accomodate `size` bytes.
-	fn required_sectors(size: u64) -> u64 {
+	fn required_sectors(size: u32) -> u32 {
 		if size == 0 {
 			return 0;
 		}
@@ -617,7 +492,7 @@ impl ChunkProvider for RegionFile {
 		match compression_scheme {
 			// GZip
 			1 => {
-				let mut dec = GzDecoder::new(reader.take(length -1));
+				let mut dec = GzDecoder::new(reader.take(length - 1));
 				Ok(dec.read_nbt()?)
 			}
 			// ZLib
@@ -633,4 +508,115 @@ impl ChunkProvider for RegionFile {
 		}
     }
 
+}
+
+/// Writes a chunk to a writer, including pad bytes.
+/// This function assumes that the writer's position is on a 4KiB boundary.
+/// The return value is the number of 4KiB sectors that were written.
+fn _write_chunk_to_region<W: Write + Seek, T: Writable>(writer: &mut W, chunk: &T, compression: Compression) -> Result<u32,RegionError> {
+	let mut chunk_buffer = Vec::new();
+	let mut compressor = ZlibEncoder::new(chunk_buffer, compression);
+
+	chunk.write_to(&mut compressor)?;
+
+	chunk_buffer = compressor.finish()?;
+
+	let length = chunk_buffer.len() as u32 + 1;
+	let mut length_buffer = length.to_be_bytes();
+	
+	writer.write(&length_buffer)?;
+	length_buffer[0] = 2;
+	writer.write(&length_buffer[..1])?;
+	writer.write(&chunk_buffer)?;
+
+	let required_sectors = RegionFile::required_sectors(length + 4);
+	let padsize = (required_sectors * 4096) - (length + 4);
+	write_zeroes(writer, padsize as u64)?;
+	Ok(required_sectors)
+}
+
+/// Writes a chunk offset to the chunk offset table in a region file.
+/// (Note: this function will return the writer back to the position it
+/// started at.)
+/// In a region file, there is a 4KiB sector in the header of the file
+/// that holds 1024 "chunk offsets". These offsets are two values,
+/// 4 bytes total. a 24-bit offset value, and an 8-bit size value.
+fn _write_offset_to_table<W: Write + Seek>(writer: &mut W, offset: ChunkOffset, index: usize) -> Result<(),RegionError> {
+	if index >= 1024 {
+		return Err(RegionError::OutOfRangeError);
+	}
+	// Store the position that the writer starts at so that we can
+	// return to that position before returning.
+	let return_offset = writer.stream_position()?;
+	// The location in the file where the offset is written to is
+	// index * 4
+	writer.seek(SeekFrom::Start((index * 4) as u64))?;
+	// Big-endian bytes, which is Minecraft's style.
+	let buffer = offset.0.to_be_bytes();
+	writer.write_all(&buffer)?;
+	// Make sure to return to where we started.
+	writer.seek(SeekFrom::Start(return_offset))?;
+	Ok(())
+}
+
+/// Writes a timestamp to the chunk timestamp table in a region file.
+/// (Note: this function will return the writer back to the position it
+/// started at.)
+fn _write_timestamp_to_table<W: Write + Seek>(writer: &mut W, timestamp: Timestamp, index: usize) -> Result<(),RegionError> {
+	if index >= 1024 {
+		return Err(RegionError::OutOfRangeError);
+	}
+	// Store the position that the writer starts at so that we can
+	// return to that position before returning.
+	let return_offset = writer.stream_position()?;
+	// The location in the file where the offset is written to is (parenteses added for readability)
+	// (index * 4) + 4096
+	writer.seek(SeekFrom::Start((index * 4 + 4096) as u64))?;
+	// Big-endian bytes, which is Minecraft's style.
+	let buffer = timestamp.0.to_be_bytes();
+	writer.write_all(&buffer)?;
+	// Make sure to return to where we started.
+	writer.seek(SeekFrom::Start(return_offset))?;
+	Ok(())
+}
+
+fn _write_blank_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
+	write_zeroes(writer, 4096*2)
+}
+
+fn _write_chunk_data<W: Write + Seek, T: Writable>(
+	sector_offset: u32,
+	writer: &mut W,
+	index: usize,
+	chunk: &T,
+	compression: Compression,
+) -> Result<u32,RegionError> {
+	let required_sectors = _write_chunk_to_region(writer, chunk, compression)?;
+	let newoffset = ChunkOffset::new(sector_offset, required_sectors as u8);
+	let newtimestamp = Timestamp::now();
+	_write_offset_to_table(writer, newoffset, index)?;
+	_write_timestamp_to_table(writer, newtimestamp, index)?;
+	Ok(sector_offset + required_sectors)
+}
+
+/// Returns the number of sectors copied.
+fn _copy_chunk_data<W: Write + Seek, R: Read + Seek>(
+	sector_offset: u32,
+	reader: &mut R,
+	writer: &mut W,
+	index: usize,
+	offset: ChunkOffset,
+	timestamp: Timestamp,
+) -> Result<u32,RegionError> {
+	if offset.empty() {
+		return Ok(sector_offset)
+	}
+	let sector_count = offset.sector_count();
+
+	reader.seek(SeekFrom::Start(offset.offset()))?;
+
+	copy_bytes(reader, writer, sector_count * 4096)?;
+	_write_timestamp_to_table(writer, timestamp, index)?;
+	_write_offset_to_table(writer, ChunkOffset::new(sector_offset, sector_count as u8), index)?;
+	Ok(sector_offset + sector_count as u32)
 }
