@@ -15,12 +15,12 @@ use std::{
 	fs::{
 		File, copy,
 	},
-	ops::{BitOr}, env::current_exe
+	ops::{BitOr}, env::current_exe, marker::PhantomData, ptr::read
 };
 
 use std::io::prelude::*;
 use chumsky::primitive::todo;
-use flate2::{read::GzDecoder, write::ZlibEncoder, Compression};
+use flate2::{read::GzDecoder, write::ZlibEncoder, Compression, Compress};
 use flate2::read::ZlibDecoder;
 
 use chrono::prelude::*;
@@ -28,7 +28,6 @@ use chrono::prelude::*;
 use crate::{
 	nbt::{
 		tag::*,
-		NbtError,
 		io::{
 			ReadNbt,
 			WriteNbt
@@ -39,33 +38,8 @@ use crate::{
 			NbtSize
 		}
 	},
-	ioext::{*, self},
+	ioext::{*, self}, McError,
 };
-use thiserror::Error as ThisError;
-
-#[derive(ThisError, Debug)]
-pub enum RegionError {
-	#[error("io error.")]
-	IO(#[from] std::io::Error),
-	#[error("NBT error")]
-	Nbt(#[from] crate::nbt::NbtError),
-	#[error("Chunk doesn't exist.")]
-	ChunkNotPresent,
-	#[error("Invalid compression scheme.")]
-	InvalidCompressionScheme(u8),
-	#[error("Out of range error.")]
-	OutOfRangeError,
-	#[error("{0}")]
-	Other(String),
-}
-
-impl RegionError {
-	pub fn other<S: AsRef<str>,T>(error_msg: S) -> Result<T,RegionError> {
-		Err(RegionError::Other(
-			error_msg.as_ref().to_owned()
-		))
-	}
-}
 
 /*
 Layout of region module:
@@ -73,12 +47,75 @@ Layout of region module:
 		create_region_file<P: AsRef<Path>>(path: P) -> 
 */
 
-pub fn create_region_file<P: AsRef<Path>>(path: P, x: i64, z: i64) -> std::io::Result<()> {
-	// 	A region consists of three portions:
-	// 	4KiB sector for Chunk Offsets
-	//	4KiB sector for Timestamps
-	//	Then minimum chunk allocation for each
-	Ok(())
+
+/// 
+#[derive(Clone, Copy,PartialEq, Eq, PartialOrd, Ord)]
+pub struct RegionCoord(u16);
+
+impl RegionCoord {
+	pub fn new(x: i32, z: i32) -> Self {
+		let xmod = (x & 31) as u16;
+		let zmod = (z & 31) as u16;
+		Self(xmod | zmod.overflowing_shl(5).0)
+	}
+
+	pub fn at_index(index: usize) -> Self {
+		Self(index as u16)
+	}
+
+	pub fn index(&self) -> usize {
+		self.0 as usize
+	}
+
+	pub fn x(&self) -> i32 {
+		(self.0 & 31) as i32
+	}
+
+	pub fn z(&self) -> i32 {
+		(self.0.overflowing_shr(5).0 & 31) as i32
+	}
+
+	pub fn tuple(&self) -> (i32, i32) {
+		self.clone().into()
+	}
+
+}
+
+impl From<(i32, i32)> for RegionCoord {
+    fn from(value: (i32, i32)) -> Self {
+        Self::new(value.0, value.1)
+    }
+}
+
+impl From<(usize, usize)> for RegionCoord {
+    fn from(value: (usize, usize)) -> Self {
+        Self::new(value.0 as i32, value.1 as i32)
+    }
+}
+
+impl From<u64> for RegionCoord {
+    fn from(value: u64) -> Self {
+		Self(value as u16)
+    }
+}
+
+impl From<i32> for RegionCoord {
+    fn from(value: i32) -> Self {
+        Self(value as u16)
+    }
+}
+
+impl From<usize> for RegionCoord {
+    fn from(value: usize) -> Self {
+        Self(value as u16)
+    }
+}
+
+impl From<RegionCoord> for (i32, i32) {
+    fn from(value: RegionCoord) -> Self {
+		let bits = value.0 as i32;
+		(bits & 31, bits.overflowing_shr(5).0 & 31)
+    }
 }
 
 /// Offset and size are packed together.
@@ -95,6 +132,14 @@ impl ChunkOffset {
 
 	pub fn offset(&self) -> u64 {
 		self.sector_offset() * 4096
+	}
+
+	pub fn seeker(&self) -> SeekFrom {
+		SeekFrom::Start(self.offset())
+	}
+
+	pub fn seek<R: Seek>(&self, reader: &mut R) -> std::io::Result<u64> {
+		reader.seek(self.seeker())
 	}
 
 	pub fn size(&self) -> u64 {
@@ -280,6 +325,7 @@ impl RegionFileInfo {
 
 }
 
+/// Handles abstractions for dealing with Region Files.
 pub struct RegionFile {
 	// 8KiB header
 	// The first 4KiB containing offsets.
@@ -299,6 +345,32 @@ impl RegionFile {
 
 	*/
 
+	/// This will create an empty region file at `path`.
+	/// An empty region file is simply 8KiB of zeroes, which is
+	/// a 1024 entry offset table and a 1024 entry timestamp table.
+	/// Each offset is a 24-bit sector offset as well as an 8-bit size
+	pub fn create<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+		let mut file = File::create(path.as_ref())?;
+		let mut writer = BufWriter::with_capacity(4096, file);
+		_write_blank_region_header(&mut writer)?;
+		Ok(Self::at_path(path))
+	}
+
+	/// 
+	//pub fn edit_chunks<'a,T: Writable + 'a,  It: IntoIterator<Item = ((i32, i32), Option<&'a T>)>>(&self, it: It, compression: Compression) -> Result<(), RegionError> {
+	pub fn create_with<'a, P, T, It>(path: P, compression: Compression, it: It) -> Result<Self,crate::McError>
+	where
+		P: AsRef<Path>,
+		T: Writable + 'a,
+		It: IntoIterator<Item = ((i32, i32), &'a T)> {
+			let region = Self::create(path)?;
+			region.edit_chunks(
+				it.into_iter().map(_map_key_value_pair_to_some),
+				compression
+			)?;
+			Ok(region)
+	}
+
 	/// This function gets the flat index (in an array of 1024 elements) from a 32x32 grid.
 	/// This is a helper function to help find the offset in a region file where certain information is stored.
 	pub(crate) const fn get_index(x: i32, z: i32) -> usize {
@@ -316,13 +388,13 @@ impl RegionFile {
 		RegionFileInfo::load(&self.path)
 	}
 
-	pub(crate) fn read_chunk_offset<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<ChunkOffset,RegionError> {
+	pub(crate) fn read_chunk_offset<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<ChunkOffset,McError> {
 		let offset = RegionFile::get_index(x, z) * 4;
 		reader.seek(SeekFrom::Start(offset as u64))?;
 		Ok(ChunkOffset::read(reader)?)
 	}
 
-	pub(crate) fn read_timestamp<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<Timestamp, RegionError> {
+	pub(crate) fn read_timestamp<R: Read + Seek>(reader: &mut R, x: i32, z: i32) -> Result<Timestamp,McError> {
 		let offset = RegionFile::get_index(x, z) * 4;
 		let mut buffer = [0u8; 4];
 		reader.seek(SeekFrom::Start(offset as u64 + 4096))?;
@@ -339,14 +411,14 @@ impl RegionFile {
 		File::open(&self.path)
 	}
 
-	pub fn get_timestamp(&self, x: i32, z: i32) -> Result<Timestamp, RegionError> {
+	pub fn get_timestamp(&self, x: i32, z: i32) -> Result<Timestamp, McError> {
 		let mut file = self.open()?;
 		let mut reader = BufReader::with_capacity(4096, file);
 		RegionFile::read_timestamp(&mut reader, x, z)
 	}
 
 	/// This function will open the region file, find the chunk offset, then seek to that offset.
-	pub fn chunk_present(&self, x: i32, z: i32) -> Result<bool, RegionError> {
+	pub fn chunk_present(&self, x: i32, z: i32) -> Result<bool, McError> {
 		let mut file = self.open()?;
 		let mut reader = BufReader::with_capacity(4096, file);
 		let offset = RegionFile::read_chunk_offset(&mut reader, x, z)?;
@@ -363,16 +435,16 @@ impl RegionFile {
 		Ok(length > 0)
 	}
 
-	pub fn delete_chunk(&self, x: i32, z: i32) -> Result<(), RegionError> {
+	pub fn delete_chunk(&self, x: i32, z: i32) -> Result<(), crate::McError> {
 		self.edit_chunk::<WriteNothing>(x, z, None, Compression::none())
 	}
 
-	pub fn set_chunk<T: Writable>(&self, x: i32, z: i32, chunk: &T, compression: Compression) -> Result<(), RegionError> {
+	pub fn set_chunk<T: Writable>(&self, x: i32, z: i32, chunk: &T, compression: Compression) -> Result<(), crate::McError> {
 		self.edit_chunk(x, z, Some(chunk), compression)
 	}
 
 	/// Either replace or delete a chunk in a region file.
-	pub(crate) fn edit_chunk<T: Writable>(&self, x: i32, z: i32, chunk: Option<&T>, compression: Compression) -> Result<(), RegionError> {
+	pub(crate) fn edit_chunk<T: Writable>(&self, x: i32, z: i32, chunk: Option<&T>, compression: Compression) -> Result<(), crate::McError> {
 		/*
 		The process for injecting a chunk is fairly difficult.
 		It involves rewriting the file completely. So a temporary file will need to be created.
@@ -383,7 +455,10 @@ impl RegionFile {
 	}
 
 	/// 
-	pub fn edit_chunks<'a,T: Writable + 'a,  It: IntoIterator<Item = ((i32, i32), Option<&'a T>)>>(&self, it: It, compression: Compression) -> Result<(), RegionError> {
+	pub fn edit_chunks<'a,T,  It>(&self, it: It, compression: Compression) -> Result<(), crate::McError>
+	where 
+	T: Writable + 'a,
+	It: IntoIterator<Item = ((i32, i32), Option<&'a T>)> {
 		let map = {
 			let mut map: Vec<Option<Option<&'a T>>> = vec![None; 1024];
 			it.into_iter().try_for_each(|((x, z), tag)| {
@@ -391,7 +466,9 @@ impl RegionFile {
 				// Check if the chunk has already been assigned. This means that we are trying to save
 				// two chunks to the same location, which is an error.
 				if map[index].is_some() {
-					return Err(RegionError::Other("Attempting to save two chunks to the same location. Eventually this error will be more detailed.".to_owned()));
+					return McError::custom(
+						"Attempting to save two chunks to the same location. Eventually this error will be more detailed."
+					);
 				}
 				map[index] = Some(tag);
 				Ok(())
@@ -408,6 +485,7 @@ impl RegionFile {
 		let mut reader = BufReader::with_capacity(4096, input);
 		
 		_write_blank_region_header(&mut writer)?;
+		let edit_time = Timestamp::now();
 
 		let mut current_sector = 2;
 		for i in 0..1024 {
@@ -418,6 +496,7 @@ impl RegionFile {
 						&mut writer,
 						i,
 						chunk,
+						edit_time,
 						compression,
 					)?;
 				},
@@ -439,7 +518,7 @@ impl RegionFile {
 		Ok(())
 	}
 
-	/// Counts the number of sectors required to accomodate `size` bytes.
+	/// Counts the number of 4KB sectors required to accomodate `size` bytes.
 	fn required_sectors(size: u32) -> u32 {
 		if size == 0 {
 			return 0;
@@ -454,9 +533,12 @@ impl RegionFile {
 
 }
 
-pub trait NbtChunkManager {
-	fn get<'a>(x: i32, z: i32) -> Option<&'a NamedTag>;
-	fn get_mut<'a>(x: i32, z: i32) -> Option<&'a mut NamedTag>;
+
+
+pub trait ChunkManager<T> {
+	fn get(&self, x: i32, z: i32) -> Option<&T>;
+	fn get_mut(&mut self, x: i32, z: i32) -> Option<&mut T>;
+	fn set(&mut self, x: i32, z: i32, value: T) -> Option<T>;
 }
 
 pub trait ChunkProvider {
@@ -468,52 +550,63 @@ pub trait ChunkProvider {
 }
 
 impl ChunkProvider for RegionFile {
-	type Error = RegionError;
+	type Error = McError;
 
 	fn get_chunk_nbt(&self, x: i32, z: i32) -> Result<NamedTag, Self::Error> {
         let mut file = self.open()?;
 		let mut reader = BufReader::with_capacity(4 << 10, file);
 		let offset = RegionFile::read_chunk_offset(&mut reader, x, z)?;
 		if offset.empty() {
-			return Err(RegionError::ChunkNotPresent);
+			return Err(McError::ChunkNotFound);
 		}
-		reader.seek(SeekFrom::Start(offset.offset()))?;
-		let mut buffer = [0u8; 4];
-		// Read the length of the chunk.
-		reader.read_exact(&mut buffer)?;
-		// 1 is subtracted from the lenth that is read because there is 1 byte for the compression scheme, and the rest of the length is the data.
-		let length = (u32::from_be_bytes(buffer) as u64);
-		if length == 0 {
-			return Err(RegionError::ChunkNotPresent);
-		}
-		// Read compression scheme
-		reader.read_exact(&mut buffer[..1])?;
-		let compression_scheme = buffer[0];
-		match compression_scheme {
-			// GZip
-			1 => {
-				let mut dec = GzDecoder::new(reader.take(length - 1));
-				Ok(dec.read_nbt()?)
-			}
-			// ZLib
-			2 => {
-				let mut dec = ZlibDecoder::new(reader.take(length - 1));
-				Ok(dec.read_nbt()?)
-			}
-			// Uncompressed (since a version before 1.15.1)
-			3 => {
-				Ok(reader.take(length - 1).read_nbt()?)
-			}
-			_ => return Err(RegionError::InvalidCompressionScheme(compression_scheme)),
-		}
+
+		offset.seek(&mut reader)?;
+		_read_from_region_sectors(&mut reader)
     }
 
+}
+
+/// This function will read a value from a reader that is an open region
+/// file. The reader is expected to be at the beginning of a 4KiB sector
+/// within the file. This function does not perform that check. It will
+/// read a 32-bit length, an 8-bit compression scheme (1, 2, or 3), then
+/// if will create the appropriate decompressor (if applicable) to read
+/// the value from.
+fn _read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<T,McError> {
+	let mut buffer = [0u8; 4];
+	// Read the length of the chunk.
+	reader.read_exact(&mut buffer)?;
+	// 1 is subtracted from the lenth that is read because there is 1 byte for the compression scheme, and the rest of the length is the data.
+	let length = u32::from_be_bytes(buffer) as u64;
+	if length == 0 {
+		return Err(McError::ChunkNotFound);
+	}
+	// Read compression scheme
+	reader.read_exact(&mut buffer[..1])?;
+	let compression_scheme = buffer[0];
+	match compression_scheme {
+		// GZip
+		1 => {
+			let mut dec = GzDecoder::new(reader.take(length - 1));
+			T::read_from(&mut dec)
+		}
+		// ZLib
+		2 => {
+			let mut dec = ZlibDecoder::new(reader.take(length - 1));
+			T::read_from(&mut dec)
+		}
+		// Uncompressed (since a version before 1.15.1)
+		3 => {
+			T::read_from(&mut reader.take(length - 1))
+		}
+		_ => return Err(McError::InvalidCompressionScheme(compression_scheme)),
+	}
 }
 
 /// Writes a chunk to a writer, including pad bytes.
 /// This function assumes that the writer's position is on a 4KiB boundary.
 /// The return value is the number of 4KiB sectors that were written.
-fn _write_chunk_to_region<W: Write + Seek, T: Writable>(writer: &mut W, chunk: &T, compression: Compression) -> Result<u32,RegionError> {
+fn _write_chunk_to_region<W: Write + Seek, T: Writable>(writer: &mut W, chunk: &T, compression: Compression) -> Result<u32,crate::McError> {
 	let mut chunk_buffer = Vec::new();
 	let mut compressor = ZlibEncoder::new(chunk_buffer, compression);
 
@@ -541,9 +634,9 @@ fn _write_chunk_to_region<W: Write + Seek, T: Writable>(writer: &mut W, chunk: &
 /// In a region file, there is a 4KiB sector in the header of the file
 /// that holds 1024 "chunk offsets". These offsets are two values,
 /// 4 bytes total. a 24-bit offset value, and an 8-bit size value.
-fn _write_offset_to_table<W: Write + Seek>(writer: &mut W, offset: ChunkOffset, index: usize) -> Result<(),RegionError> {
+fn _write_offset_to_table<W: Write + Seek>(writer: &mut W, offset: ChunkOffset, index: usize) -> Result<(),McError> {
 	if index >= 1024 {
-		return Err(RegionError::OutOfRangeError);
+		return Err(McError::OutOfRange);
 	}
 	// Store the position that the writer starts at so that we can
 	// return to that position before returning.
@@ -562,9 +655,9 @@ fn _write_offset_to_table<W: Write + Seek>(writer: &mut W, offset: ChunkOffset, 
 /// Writes a timestamp to the chunk timestamp table in a region file.
 /// (Note: this function will return the writer back to the position it
 /// started at.)
-fn _write_timestamp_to_table<W: Write + Seek>(writer: &mut W, timestamp: Timestamp, index: usize) -> Result<(),RegionError> {
+fn _write_timestamp_to_table<W: Write + Seek>(writer: &mut W, timestamp: Timestamp, index: usize) -> Result<(),McError> {
 	if index >= 1024 {
-		return Err(RegionError::OutOfRangeError);
+		return Err(McError::OutOfRange);
 	}
 	// Store the position that the writer starts at so that we can
 	// return to that position before returning.
@@ -580,25 +673,40 @@ fn _write_timestamp_to_table<W: Write + Seek>(writer: &mut W, timestamp: Timesta
 	Ok(())
 }
 
+/// Every header file has an 8KiB (8192) byte header that contains:
+///	1024 Offset values (32-bits)
+/// 1024 Timestamp values (32-bits)
+/// A blank header would just be 8192 zeroes at the beginning of a
+/// region file. This function writes that blank header to a writer.
+/// The writer is expected to already be at the beginning of the file.
+/// This file is simply a shortcut to write 8KiB of zeroes.
 fn _write_blank_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
 	write_zeroes(writer, 4096*2)
 }
 
+/// Shortcut for writing a chunk to a writer.
+/// Sector offset is the current sector offset in the writer. The return
+/// value is the sector_offset + the number of sectors written.
+/// This function will also write the new offset to the offset table
+/// of the chunk, then it will write the timestamp to the timestamp
+/// table.
 fn _write_chunk_data<W: Write + Seek, T: Writable>(
 	sector_offset: u32,
 	writer: &mut W,
 	index: usize,
 	chunk: &T,
+	timestamp: Timestamp,
 	compression: Compression,
-) -> Result<u32,RegionError> {
+) -> Result<u32,crate::McError> {
 	let required_sectors = _write_chunk_to_region(writer, chunk, compression)?;
 	let newoffset = ChunkOffset::new(sector_offset, required_sectors as u8);
-	let newtimestamp = Timestamp::now();
 	_write_offset_to_table(writer, newoffset, index)?;
-	_write_timestamp_to_table(writer, newtimestamp, index)?;
+	_write_timestamp_to_table(writer, timestamp, index)?;
 	Ok(sector_offset + required_sectors)
 }
 
+/// Copies chunk data from one region file to another.
+/// Also writes provided timestamp and offset to region file header.
 /// Returns the number of sectors copied.
 fn _copy_chunk_data<W: Write + Seek, R: Read + Seek>(
 	sector_offset: u32,
@@ -607,16 +715,24 @@ fn _copy_chunk_data<W: Write + Seek, R: Read + Seek>(
 	index: usize,
 	offset: ChunkOffset,
 	timestamp: Timestamp,
-) -> Result<u32,RegionError> {
+) -> Result<u32,McError> {
+
 	if offset.empty() {
 		return Ok(sector_offset)
 	}
-	let sector_count = offset.sector_count();
 
+	let sector_count = offset.sector_count();
 	reader.seek(SeekFrom::Start(offset.offset()))?;
 
 	copy_bytes(reader, writer, sector_count * 4096)?;
+
 	_write_timestamp_to_table(writer, timestamp, index)?;
 	_write_offset_to_table(writer, ChunkOffset::new(sector_offset, sector_count as u8), index)?;
+
 	Ok(sector_offset + sector_count as u32)
+}
+
+/// Maps the T value to a Some(T).
+fn _map_key_value_pair_to_some<T>(item: ((i32, i32), T)) -> ((i32, i32), Option<T>) {
+	(item.0, Some(item.1))
 }

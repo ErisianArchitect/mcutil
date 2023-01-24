@@ -15,6 +15,21 @@ use super::tagpath::TagPathPart;
 
 
 
+// So the idea is that a TagPath can be used to access elements/values within
+// a Tag.
+// So we want to create two types: TagRef, and TagRefMut
+// The type that I plan on creating should be able to access values
+// of each tag type, but should also be able to access values
+// within a List tag and Compound tag.
+// The TagRef should not hold information about whether it is sourced
+// from a tag or if it is sourced from an array/list.
+// So there would be no fundamental difference between accessing a Byte
+// tag inside a compound and accessing an individual byte within a list
+// or array.
+
+
+/// Allows immutable access to a value within an NBT tag hieracrchy.
+/// This includes values within `ByteArray`/`IntArray`/`LongArray`/`ListTag`.
 #[derive(Clone, Copy)]
 #[repr(isize)]
 pub enum ValueRef<'a> {
@@ -32,6 +47,8 @@ pub enum ValueRef<'a> {
 	LongArray(&'a LongArray) = 12,
 }
 
+/// Allows mutable access to a value within an NBT tag hieracrchy.
+/// This includes values within `ByteArray`/`IntArray`/`LongArray`/`ListTag`.
 #[repr(isize)]
 pub enum ValueRefMut<'a> {
 	Byte(&'a mut Byte) = 1,
@@ -47,52 +64,6 @@ pub enum ValueRefMut<'a> {
 	IntArray(&'a mut IntArray) = 11,
 	LongArray(&'a mut LongArray) = 12,
 }
-
-// So the idea is that a TagPath can be used to access elements/values within
-// a Tag.
-// So we want to create two types: TagRef, and TagRefMut
-// The type that I plan on creating should be able to access values
-// of each tag type, but should also be able to access values
-// within a List tag and Compound tag.
-// The TagRef should not hold information about whether it is sourced
-// from a tag or if it is sourced from an array/list.
-// So there would be no fundamental difference between accessing a Byte
-// tag inside a compound and accessing an individual byte within a list
-// or array.
-
-// pub trait NbtNode {
-// 	fn get_child<'a>(&'a self, at: &TagPathPart) -> Option<ValueRef<'a>>;
-// 	fn get_child_mut<'a>(&'a mut self, at: &TagPathPart) -> Option<ValueRefMut<'a>> { None }
-// 	fn find_child<'a>(&'a self, path: &[TagPathPart]) -> Option<ValueRef<'a>> { 
-// 		if path.is_empty() {
-// 			return None;
-// 		}
-// 		let mut walker: Option<ValueRef<'a>> = self.get_child(&path[0]);
-// 		let mut path_remaining = &path[1..];
-// 		while !path_remaining.is_empty() && walker.is_some() {
-// 			walker = walker.and_then(|valref| {
-// 				valref.get_child(&path_remaining[0])
-// 			});
-// 			path_remaining = &path_remaining[1..];
-// 		}
-// 		walker
-// 	}
-
-// 	fn find_child_mut<'a>(&'a mut self, path: &[TagPathPart]) -> Option<ValueRefMut<'a>> {
-// 		if path.is_empty() {
-// 			return None;
-// 		}
-// 		let mut walker: Option<ValueRefMut<'a>> = self.get_child_mut(&path[0]);
-// 		let mut path_remaining = &path[1..];
-// 		while !path_remaining.is_empty() && walker.is_some() {
-// 			walker = walker.and_then(|valref| {
-// 				valref.get_child_mut(&path_remaining[0])
-// 			});
-// 			path_remaining = &path_remaining[1..];
-// 		}
-// 		walker
-// 	}
-// }
 
 macro_rules! get_child_in_array {
 	($reftype:ident::$variant:ident($([$mut:ident])? $node:ident[$index:expr])) => {
@@ -192,7 +163,7 @@ impl<'a> ValueRef<'a> {
 		get_child_dry!(self:ValueRef at => ValueRef)
 	}
 
-	fn find_child(self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
+	pub fn find_child(self, path: &[TagPathPart]) -> Option<ValueRef<'a>> {
 		if path.is_empty() {
 			return None;
 		}

@@ -1,9 +1,9 @@
 // https://wiki.vg/NBT
 // https://minecraft.fandom.com/wiki/NBT_format
 
-use crate::nbt::{
+use crate::{nbt::{
 	Map,
-	NbtError,
+	// McError,
 	tag::{
 		Tag,
 		TagID,
@@ -12,7 +12,7 @@ use crate::nbt::{
 	},
 	family::*,
 	tag_info_table,
-};
+}, McError};
 use std::io::{ Read, Write };
 
 /// Trait that gives the serialization size in bytes of various values.
@@ -25,13 +25,13 @@ pub trait NbtSize {
 /// Trait applied to all readers for NBT extensions.
 pub trait ReadNbt: Read {
 	/// Read NBT (anything that implements NbtRead).
-	fn read_nbt<T: NbtRead>(&mut self) -> Result<T, NbtError>;
+	fn read_nbt<T: NbtRead>(&mut self) -> Result<T, McError>;
 }
 
 // std::io::Read extension method read_nbt implementation.
 impl<Reader: Read> ReadNbt for Reader {
 	/// Read NBT (anything that implements NbtRead).
-	fn read_nbt<T: NbtRead>(&mut self) -> Result<T, NbtError> {
+	fn read_nbt<T: NbtRead>(&mut self) -> Result<T, McError> {
 		T::nbt_read(self)
 	}
 }
@@ -39,13 +39,13 @@ impl<Reader: Read> ReadNbt for Reader {
 /// Trait applied to all writers for NBT extensions.
 pub trait WriteNbt: Write {
 	/// Write NBT (anything that implements NbtWrite).
-	fn write_nbt<T: NbtWrite>(&mut self, value: &T) -> Result<usize, NbtError>;
+	fn write_nbt<T: NbtWrite>(&mut self, value: &T) -> Result<usize, McError>;
 }
 
 // std::io::Write extension method write_nbt implementation.
 impl<Writer: Write> WriteNbt for Writer {
 	/// Write NBT (anything that implements NbtWrite).
-	fn write_nbt<T: NbtWrite>(&mut self, value: &T) -> Result<usize, NbtError> {
+	fn write_nbt<T: NbtWrite>(&mut self, value: &T) -> Result<usize, McError> {
 		value.nbt_write(self)
 	}
 }
@@ -58,7 +58,7 @@ impl<Writer: Write> WriteNbt for Writer {
 /// Although this trait is public, it is not intended for public API usage.
 pub trait NbtRead: Sized {
 	/// Attempt to read a value from a reader.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError>;
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError>;
 }
 
 /// A trait for writing values to writers.
@@ -69,7 +69,7 @@ pub trait NbtRead: Sized {
 /// Although this trait is public, is is not intended for public API usage.
 pub trait NbtWrite {
 	/// Write a value to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError>;
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError>;
 }
 
 macro_rules! tag_io {
@@ -80,7 +80,7 @@ macro_rules! tag_io {
 		This is necessary for writing Compound (HashMap) tags.
 		This is also how the root tag of an NBT file is written.
 		"]
-		pub fn write_named_tag<W: Write, S: AsRef<str>>(writer: &mut W, tag: &Tag, name: S) -> Result<usize, NbtError> {
+		pub fn write_named_tag<W: Write, S: AsRef<str>>(writer: &mut W, tag: &Tag, name: S) -> Result<usize, McError> {
 			let id = tag.id();
 			id.nbt_write(writer)?;
 			let key_size = name.as_ref().nbt_write(writer)?;
@@ -103,7 +103,7 @@ macro_rules! tag_io {
 		determine which [Tag] type to read. Typically this will be a Compound tag (ID: 10), or a List tag (ID: 9).
 		There is no restriction on what type this tag can be, though.
 		"]
-		pub fn read_named_tag<R: Read>(reader: &mut R) -> Result<(String, Tag), NbtError> {
+		pub fn read_named_tag<R: Read>(reader: &mut R) -> Result<(String, Tag), McError> {
 			let id = TagID::nbt_read(reader)?;
 			let name = String::nbt_read(reader)?;
 			let tag = match id {
@@ -141,12 +141,8 @@ macro_rules! tag_io {
 
 		impl NbtRead for ListTag {
 			#[doc = "Attempt to read a [ListTag] from a reader."]
-			fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+			fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 				let id = TagID::nbt_read(reader);
-				if matches!(id, Err($crate::nbt::NbtError::End)) {
-					u32::nbt_read(reader)?;
-					return Ok(ListTag::Empty);
-				}
 				match id {
 					$(
 						Ok(TagID::$title) => {
@@ -156,7 +152,7 @@ macro_rules! tag_io {
 							))
 						},
 					)+
-					Err($crate::nbt::NbtError::End) => {
+					Err($crate::McError::EndTagMarker) => {
 						u32::nbt_read(reader)?;
 						Ok(ListTag::Empty)
 					},
@@ -169,7 +165,7 @@ macro_rules! tag_io {
 
 		impl NbtWrite for ListTag {
 			#[doc = "Attmept to write a [ListTag] to a writer."]
-			fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize,NbtError> {
+			fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize,McError> {
 				match self {
 					$(
 						ListTag::$title(list) => {
@@ -188,7 +184,7 @@ macro_rules! tag_io {
 
 		impl NbtRead for Map {
 			#[doc = "Attempt to read a [Map] from a reader."]
-			fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+			fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 				// Reading goes like this:
 				// Read TagID
 				// if TagID is not End or Unsupported,
@@ -198,7 +194,7 @@ macro_rules! tag_io {
 				//     repeat until id is End or Unsupported
 				let mut map = Map::new();
 				let mut id = TagID::nbt_read(reader);
-				while !matches!(id, Err($crate::nbt::NbtError::End)) {
+				while !matches!(id, Err($crate::McError::EndTagMarker)) {
 					let name = String::nbt_read(reader)?;
 					let tag = match id {
 						$(
@@ -215,7 +211,7 @@ macro_rules! tag_io {
 
 		impl NbtWrite for Tag {
 			#[doc = "Attempt to write a [Tag]"]
-			fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+			fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 				match self {
 					$(
 						Tag::$title(tag) => tag.nbt_write(writer),
@@ -232,7 +228,7 @@ macro_rules! primitive_io {
 		$(
 			impl NbtRead for $primitive {
 				#[doc ="Attempts to read primitive from reader. This will read in Big-Endian byte-order."]
-				fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+				fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 					let mut buf = [0u8; std::mem::size_of::<$primitive>()];
 					reader.read_exact(&mut buf)?;
 					Ok(Self::from_be_bytes(buf))
@@ -241,7 +237,7 @@ macro_rules! primitive_io {
 
 			impl NbtWrite for $primitive {
 				#[doc = "Attempts to write primitive to writer. This will write in Big-Endian byte-order."]
-				fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+				fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 					Ok(writer.write(self.to_be_bytes().as_slice())?)
 				}
 			}
@@ -261,19 +257,19 @@ primitive_io![
 tag_info_table!(tag_io);
 
 /// Reads an exact number of bytes from a reader, returning them as a [Vec].
-fn read_bytes<R: Read>(reader: &mut R, length: usize) -> Result<Vec<u8>, NbtError> {
+fn read_bytes<R: Read>(reader: &mut R, length: usize) -> Result<Vec<u8>, McError> {
 	let mut buf: Vec<u8> = vec![0u8; length];
 	reader.read_exact(&mut buf)?;
 	Ok(buf)
 }
 
 /// Writes a byte slice to a writer, returning the number of bytes that were written.
-fn write_bytes<W: Write>(writer: &mut W, data: &[u8]) -> Result<usize, NbtError> {
+fn write_bytes<W: Write>(writer: &mut W, data: &[u8]) -> Result<usize, McError> {
 	Ok(writer.write_all(data).map(|_| data.len())?)
 }
 
 /// Reads a certain number of elements from a reader.
-fn read_array<R, T>(reader: &mut R, length: usize) -> Result<Vec<T>, NbtError>
+fn read_array<R, T>(reader: &mut R, length: usize) -> Result<Vec<T>, McError>
 where
 	R: Read,
 	T: NbtRead,
@@ -282,7 +278,7 @@ where
 }
 
 /// Writes elements to a writer, returning the total number of bytes written.
-fn write_array<W, T>(writer: &mut W, data: &[T]) -> Result<usize, NbtError>
+fn write_array<W, T>(writer: &mut W, data: &[T]) -> Result<usize, McError>
 where
 	W: Write,
 	T: NbtWrite,
@@ -360,7 +356,7 @@ impl NbtSize for Vec<ListTag> {
 // For reading Named Tag straight into a Tuple.
 impl<S: From<String>, T: From<Tag>> NbtRead for (S, T) {
 	/// For reading a named tag straight into a Tuple.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 		let (name, tag) = read_named_tag(reader)?;
 		Ok((S::from(name), T::from(tag)))
 	}
@@ -368,7 +364,7 @@ impl<S: From<String>, T: From<Tag>> NbtRead for (S, T) {
 
 impl<T: NbtRead + NonByte> NbtRead for Vec<T> {
 	/// Read a [Vec] from a reader.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 		let length = u32::nbt_read(reader)?;
 		read_array(reader, length as usize)
 	}
@@ -376,7 +372,7 @@ impl<T: NbtRead + NonByte> NbtRead for Vec<T> {
 
 impl NbtRead for Vec<i8> {
 	/// Read a bytearray from a reader.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 		let length = u32::nbt_read(reader)?;
 		let bytes = read_bytes(reader, length as usize)?;
 		// Use compiler magic to convert Vec<u8> to Vec<i8>
@@ -390,7 +386,7 @@ impl NbtRead for Vec<i8> {
 
 impl NbtRead for String {
 	/// Read a String from a reader.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 		// 🦆 <-- Frank
 		// Frank: How does this function work, eh?
 		// Me: Well, you see, to read a string in NBT format, we first
@@ -404,36 +400,36 @@ impl NbtRead for String {
 }
 
 impl NbtRead for TagID {
-	/// Read a TagID from a reader. If `0` is encountered, this will return `Err(NbtError::End)`.
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, NbtError> {
+	/// Read a TagID from a reader. If `0` is encountered, this will return `Err(McError::End)`.
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
 		TagID::try_from(u8::nbt_read(reader)?)
 	}
 }
 
 impl<S: AsRef<str>> NbtWrite for (S, Tag) {
 	/// Write a Tuple as a named tag to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		write_named_tag(writer, &self.1, self.0.as_ref())
 	}
 }
 
 impl NbtWrite for TagID {
 	/// Write a TagID to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		(self.value() as u8).nbt_write(writer)
 	}
 }
 
 impl NbtRead for NamedTag {
 	#[doc = "Attempt to read a [NamedTag] from a reader. This is a wrapper around `read_named_tag(reader)"]
-	fn nbt_read<R: Read>(reader: &mut R) -> Result<NamedTag, NbtError> {
+	fn nbt_read<R: Read>(reader: &mut R) -> Result<NamedTag, McError> {
 		Ok(read_named_tag(reader)?.into())
 	}
 }
 
 impl NbtWrite for &str {
 	/// Write a string to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		let length: u16 = self.len() as u16;
 		length.nbt_write(writer)?;
 		Ok(writer.write_all(self.as_bytes()).map(|_| self.len() + 2)?)
@@ -442,7 +438,7 @@ impl NbtWrite for &str {
 
 impl NbtWrite for String {
 	/// Write a string to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		self.as_str().nbt_write(writer)
 	}
 }
@@ -452,7 +448,7 @@ impl NbtWrite for String {
 impl<T: NbtWrite + NonByte> NbtWrite for Vec<T> {
 	/// Write a [Vec] to a writer.
 	/// This will also write the size of the [Vec] as a Big-Endian 32-bit integer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		(self.len() as u32).nbt_write(writer)?;
 		write_array(writer, self.as_slice()).map(|size| size + 4) // The `+ 4` is to add the size of the u32 length
 	}
@@ -462,7 +458,7 @@ impl<T: NbtWrite + NonByte> NbtWrite for Vec<T> {
 // Profiling showed that this was an improvement, so it's what I'm going with.
 impl NbtWrite for Vec<i8> {
 	/// Write a bytearray to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		(self.len() as u32).nbt_write(writer)?;
 		let u8slice: &[u8] = bytemuck::cast_slice(self.as_slice());
 		Ok(write_bytes(writer, u8slice)? + 4) // The `+ 4` is to add the size of the u32 length
@@ -471,7 +467,7 @@ impl NbtWrite for Vec<i8> {
 
 impl NbtWrite for Map {
 	/// Write a [Map] to a writer.
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		// Writing goes like this:
 		// for each key/value pair, write:
 		//     TagID of value
@@ -488,7 +484,7 @@ impl NbtWrite for Map {
 
 impl NbtWrite for NamedTag {
 	#[doc = "Attempt to write a [NamedTag] to a writer. This is a wrapper around `write_named_tag(writer, self.tag(), self.name())`"]
-	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, NbtError> {
+	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
 		write_named_tag(writer, &self.tag, &self.name)
 	}
 }

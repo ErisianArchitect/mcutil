@@ -71,15 +71,3 @@ impl<T> QuadTree<T> {
 	}
 
 }
-
-#[test]
-fn quad_test() {
-	let mut tree: QuadTree<QuadTree<QuadTree<i32>>> = QuadTree::new();
-	let mut subtree: QuadTree<QuadTree<i32>> = QuadTree::new();
-	let mut final: QuadTree<i32> = QuadTree::new();
-	final.set(0, 0, 1312);
-	subtree.set(0, 1, final);
-	tree.set(1, 1, subtree);
-	tree.set(0,0, QuadTree::new());
-
-}

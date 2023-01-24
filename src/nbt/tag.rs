@@ -206,7 +206,7 @@ impl ListTag {
 }
 
 impl TryFrom<u8> for TagID {
-	type Error = crate::nbt::NbtError;
+	type Error = crate::McError;
 	#[doc = "
 	Attempts to create a [TagID] from a [u8].<br>
 	Errors:
@@ -227,12 +227,10 @@ impl TryFrom<u8> for TagID {
 			10 => Ok(TagID::Compound),
 			11 => Ok(TagID::IntArray),
 			12 => Ok(TagID::LongArray),
-			00 => Err(crate::nbt::NbtError::End),
+			00 => Err(crate::McError::EndTagMarker),
 			other => {
 				// There was an unsupported ID passed to the try_from function.
-				Err(crate::nbt::NbtError::Unsupported {
-					id_encountered: other
-				})
+				Err(crate::McError::UnsupportedTagId(other))
 			}
 		}
 	}

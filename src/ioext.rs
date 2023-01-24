@@ -7,18 +7,29 @@ use std::io::{
 };
 
 use crate::nbt::{
-	NbtError,
 	io::NbtWrite,
+	io::NbtRead,
 };
 
 pub trait Writable {
-	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,NbtError>;
+	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError>;
+}
+
+pub trait Readable: Sized {
+	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError>;
 }
 
 impl<T: NbtWrite> Writable for T {
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,NbtError> {
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
         use crate::nbt::io::*;
-		writer.write_nbt(self)
+		Ok(writer.write_nbt(self)?)
+    }
+}
+
+impl<T: NbtRead> Readable for T {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+        use crate::nbt::io::*;
+		Ok(reader.read_nbt()?)
     }
 }
 
@@ -38,19 +49,20 @@ pub fn write_zeroes<W: Write>(writer: &mut W, count: u64) -> io::Result<u64> {
 
 /// Copies bytes from a reader into a writer
 pub fn copy_bytes<R: Read, W: Write>(reader: &mut R, writer: &mut W, count: u64) -> io::Result<u64> {
-	let buffer_size = _highest_power_of_two(count).min(4096);
-	let mut buffer = vec![0u8; buffer_size as usize];
-	let mut remainder = count;
-	while remainder >= buffer_size {
-		reader.read_exact(&mut buffer)?;
-		writer.write_all(&buffer)?;
-		remainder = remainder - buffer_size;
-	}
-	if remainder != 0 {
-		reader.read_exact(&mut buffer[0..remainder as usize])?;
-		writer.write_all(&buffer[0..remainder as usize])?;
-	}
-	Ok(count)
+	std::io::copy(&mut reader.take(count), writer)
+	// let buffer_size = _highest_power_of_two(count).min(4096);
+	// let mut buffer = vec![0u8; buffer_size as usize];
+	// let mut remainder = count;
+	// while remainder >= buffer_size {
+	// 	reader.read_exact(&mut buffer)?;
+	// 	writer.write_all(&buffer)?;
+	// 	remainder = remainder - buffer_size;
+	// }
+	// if remainder != 0 {
+	// 	reader.read_exact(&mut buffer[0..remainder as usize])?;
+	// 	writer.write_all(&buffer[0..remainder as usize])?;
+	// }
+	// Ok(count)
 }
 
 fn _highest_power_of_two(value: u64) -> u64 {
@@ -67,7 +79,7 @@ fn _highest_power_of_two(value: u64) -> u64 {
 pub struct WriteNothing;
 
 impl Writable for WriteNothing {
-    fn write_to<W: Write>(&self, _: &mut W) -> Result<usize,NbtError> {
+    fn write_to<W: Write>(&self, _: &mut W) -> Result<usize,crate::McError> {
         Ok(0)
     }
 }

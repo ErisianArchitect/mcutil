@@ -2,18 +2,10 @@ pub mod nbt;
 pub mod world;
 pub mod ioext;
 pub mod tree;
+pub mod error;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub use flate2;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use thiserror::Error;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use error::McError;
