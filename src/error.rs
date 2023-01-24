@@ -1,4 +1,6 @@
 
+
+
 use thiserror::Error;
 
 /// The master error type.
@@ -18,11 +20,25 @@ pub enum McError {
 	UnsupportedTagId(u8),
 	#[error("Encountered the End Tag ID marker.")]
 	EndTagMarker,
+	#[error("Attempted to save two chunks to the same location.")]
+	DuplicateChunk,
 	#[error("{0}")]
 	Custom(String),
 }
 
 impl McError {
+	
+	pub fn range_check<T, R>(value: T, range: R) -> Result<(),McError>
+	where
+	T: PartialOrd + Sized,
+	R: std::ops::RangeBounds<T> {
+		if range.contains(&value) {
+			Ok(())
+		} else {
+			Err(McError::OutOfRange)
+		}
+	}
+
 	pub fn custom<T, S: AsRef<str>>(msg: S) -> Result<T,Self> {
 		Err(McError::Custom(msg.as_ref().to_owned()))
 	}

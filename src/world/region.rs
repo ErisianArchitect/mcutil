@@ -365,8 +365,8 @@ impl RegionFile {
 		It: IntoIterator<Item = ((i32, i32), &'a T)> {
 			let region = Self::create(path)?;
 			region.edit_chunks(
+				compression,
 				it.into_iter().map(_map_key_value_pair_to_some),
-				compression
 			)?;
 			Ok(region)
 	}
@@ -451,11 +451,20 @@ impl RegionFile {
 		Then each chunk present in the file is systematically copied over to the new file and
 		a new timestamp and chunk offset table is built.
 		*/
-		self.edit_chunks([((x, z), chunk)], compression)
+		self.edit_chunks(compression, [((x, z), chunk)])
 	}
 
-	/// 
-	pub fn edit_chunks<'a,T,  It>(&self, it: It, compression: Compression) -> Result<(), crate::McError>
+	/// Rebuilds a region files.
+	/// If a None value is provided, effectively deletes the chunk.
+	/// Otherwise, if a Some value is provided, that value is written
+	/// to the file.
+	/// The coordinate for each provided chunk will be normalized to the 32x32 range.
+	/// That means that if it is outside of the range of 0-31, It will be forced into
+	/// that range. Does that make sense? No? Maybe this will:
+	/// ```rs
+	/// value = value.rem_euclid(32);
+	/// ```
+	pub fn edit_chunks<'a,T,  It>(&self, compression: Compression, it: It) -> Result<(), crate::McError>
 	where 
 	T: Writable + 'a,
 	It: IntoIterator<Item = ((i32, i32), Option<&'a T>)> {
@@ -465,13 +474,11 @@ impl RegionFile {
 				let index = RegionFile::get_index(x, z);
 				// Check if the chunk has already been assigned. This means that we are trying to save
 				// two chunks to the same location, which is an error.
-				if map[index].is_some() {
-					return McError::custom(
-						"Attempting to save two chunks to the same location. Eventually this error will be more detailed."
-					);
+				if std::mem::replace(&mut map[index], Some(tag)).is_none() {
+					Ok(())
+				} else {
+					Err(McError::DuplicateChunk)
 				}
-				map[index] = Some(tag);
-				Ok(())
 			})?;
 			map
 		};

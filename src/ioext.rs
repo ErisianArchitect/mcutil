@@ -76,6 +76,11 @@ fn _highest_power_of_two(value: u64) -> u64 {
 	highest
 }
 
+/// A `Writable` struct that writes nothing to the writer.
+/// This is useful when you need to provide a Writable type to a function
+/// but do not want to write anything.
+/// The specific purpose that this was created for was for deleting chunks
+/// from a region file using its edit_chunks function.
 pub struct WriteNothing;
 
 impl Writable for WriteNothing {
