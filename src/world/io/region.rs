@@ -26,7 +26,7 @@ use flate2::{
 	Compress
 };
 
-use crate::*;
+use crate::{*, world::chunk};
 use crate::{ioext::*, math::bit::SetBit};
 use crate::world::io::*;
 use crate::for_each_int_type;
@@ -423,6 +423,11 @@ impl<W: Write + Seek> RegionWriter<W> {
 		}
 	}
 
+	/// Returns the 4KiB offset of the current sector.
+	pub fn sector_offset(&mut self) -> Result<u32,McError> {
+		Ok(self.writer.stream_position()? as u32)
+	}
+
 	/// This function writes an 8KiB zeroed header to the writer.
 	/// In order to reduce system calls and whatever, this function
 	/// assumes that you are already at the start of the file.
@@ -435,18 +440,74 @@ impl<W: Write + Seek> RegionWriter<W> {
 	/// Write an offset to the offset table of the Region file.
 	pub fn write_offset<C: Into<RegionCoord>,O: Into<RegionSector>>(&mut self, coord: C, offset: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
+		let oldpos = self.writer.stream_position()?;
 		coord._seek_to_offset_table(&mut self.writer)?;
 		let offset: RegionSector = offset.into();
-		offset.write_to(&mut self.writer)
+		let result = offset.write_to(&mut self.writer);
+		self.writer.seek(SeekFrom::Start(oldpos))?;
+		result
 	}
 
 	/// Write a timestamp to the timestamp table of the Region file.
 	pub fn write_timestamp<C: Into<RegionCoord>, O: Into<Timestamp>>(&mut self, coord: C, timestamp: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
+		let oldpos = self.writer.stream_position()?;
 		coord._seek_to_timestamp_table(&mut self.writer)?;
 		let timestamp: Timestamp = timestamp.into();
-		timestamp.write_to(&mut self.writer)
+		let result = timestamp.write_to(&mut self.writer);
+		self.writer.seek(SeekFrom::Start(oldpos))?;
+		result
 	}
+
+	/// Write a chunk to the region file starting at the current
+	/// position in the file. After writing the chunk, pad bytes will 
+	/// be written to ensure that the region file is a multiple of 4096
+	/// bytes.
+	/// This function does not write anything to the header. 
+	pub fn write_chunk<C: Into<RegionCoord>,T: Writable>(&mut self, coord: C, value: &T) -> Result<RegionSector,McError> {
+		let start_sector = self.sector_offset()?;
+
+		todo!()
+	}
+}
+
+// TODO: 	Create enum for compression level that can be exposed to crate users.
+//			I don't want to export flate2::Compression to users of this crate.
+/// Writes data to the writer, then pads that data to a 4KiB boundary.
+/// This function assume that the writer is already on a 4KiB boundary.
+/// If you're not on a 4KiB boundary, you're probably going to corrupt your data.
+/// If you manage to not corrupt your data, it will be a miracle.
+/// Oh, and compression level can be value from 0 to 9 where 0 is no compression
+/// and 9 is best compression.
+/// If the function succeeds, it will return the RegionSector where it was written in the writer.
+/// (Note: This is a building block function. It's not meant for general usage)
+fn _write_padded_region_data<T: Writable, W: Write + Seek>(writer: &mut W, compression_level: u32, data: &T) -> Result<RegionSector,McError> {
+	// Figure out what sector we are in. Hopefully we are on a 4KiB boundary.
+	// TODO: Perform 4KiB boundary check. Or don't.
+	let start_sector = writer.stream_position()? / 4096;
+	let compression = Compression::new(compression_level);
+	let mut chunk_buffer = Vec::with_capacity(4096);
+	let mut compressor = ZlibEncoder::new(chunk_buffer, compression);
+
+	data.write_to(&mut compressor)?;
+
+	chunk_buffer = compressor.finish()?;
+
+	let length = chunk_buffer.len() as u32 + 1; // add 1 for the single byte representing the compression scheme.
+	let mut length_buffer = length.to_be_bytes();
+
+	writer.write_all(&length_buffer)?;
+	// this is for the compression scheme (2 => ZLib).
+	length_buffer[0] = 2;
+	writer.write_all(&length_buffer[..1])?;
+	writer.write_all(&chunk_buffer)?;
+
+	// add 4 to the length because you have to include the 4 bytes for the length value.
+	let required_sectors = _required_sectors(length + 4);
+	let padsize = (required_sectors * 4096) - (length + 4);
+	writer.write_zeroes(padsize as u64)?;
+
+	Ok(RegionSector::new(start_sector as u32, required_sectors as u8))
 }
 
 /// This function will read a value from a reader that is an open region
@@ -495,4 +556,17 @@ fn _read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<T,Mc
 /// Returns the number of bytes that were written (Should always be 8192)
 fn _write_empty_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
 	writer.write_zeroes(1024*8)
+}
+
+/// Counts the number of 4KB sectors required to accomodate `size` bytes.
+const fn _required_sectors(size: u32) -> u32 {
+	if size == 0 {
+		return 0;
+	}
+	if size < 4096 {
+		return 1;
+	}
+	let sub = size / 4096;
+	let overflow = if size.rem_euclid(4096) != 0 { 1 } else { 0 };
+	sub + overflow
 }
