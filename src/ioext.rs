@@ -1,90 +1,45 @@
 use std::io::{
-	self,
-	Write,
-	Read,
-	// BufWriter,
-	// BufReader,
+	Write, Read,
+	Seek, SeekFrom,
 };
 
-use crate::nbt::{
-	io::NbtWrite,
-	io::NbtRead,
-};
-
+/// For types that can be written to a writer.
 pub trait Writable {
 	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError>;
 }
 
+/// For types that can be read from a reader.
 pub trait Readable: Sized {
 	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError>;
 }
 
-impl<T: NbtWrite> Writable for T {
-    fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
-        use crate::nbt::io::*;
-		Ok(writer.write_nbt(self)?)
-    }
-}
-
-impl<T: NbtRead> Readable for T {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
-        use crate::nbt::io::*;
-		Ok(reader.read_nbt()?)
-    }
-}
-
-/// Writes zeroes to a writer.
-pub fn write_zeroes<W: Write>(writer: &mut W, count: u64) -> io::Result<u64> {
-	const ZEROES: &'static [u8; 4096] = &[0u8; 4096];
-	let mut remainder = count;
-	while remainder >= ZEROES.len() as u64 {
-		writer.write_all(ZEROES)?;
-		remainder -= ZEROES.len() as u64;
+/// For types that represent a seekable file offset.
+pub trait Seekable: Sized {
+	fn seek_to<S: Seek>(&self, seeker: &mut S) -> Result<u64,crate::McError> {
+		Ok(seeker.seek(self.seeker())?)
 	}
-	if remainder != 0 {
-		writer.write_all(&ZEROES[0..remainder as usize])?;
-	}
-	Ok(count)
+
+	fn seeker(&self) -> SeekFrom;
 }
 
-/// Copies bytes from a reader into a writer
-pub fn copy_bytes<R: Read, W: Write>(reader: &mut R, writer: &mut W, count: u64) -> io::Result<u64> {
-	std::io::copy(&mut reader.take(count), writer)
-	// let buffer_size = _highest_power_of_two(count).min(4096);
-	// let mut buffer = vec![0u8; buffer_size as usize];
-	// let mut remainder = count;
-	// while remainder >= buffer_size {
-	// 	reader.read_exact(&mut buffer)?;
-	// 	writer.write_all(&buffer)?;
-	// 	remainder = remainder - buffer_size;
-	// }
-	// if remainder != 0 {
-	// 	reader.read_exact(&mut buffer[0..remainder as usize])?;
-	// 	writer.write_all(&buffer[0..remainder as usize])?;
-	// }
-	// Ok(count)
+pub trait WriteExt: Write + Sized {
+	fn write_value<T: Writable>(&mut self, value: T) -> Result<usize,crate::McError> {
+		value.write_to(self)
+	}
 }
 
-fn _highest_power_of_two(value: u64) -> u64 {
-	if value == 0 {
-		return 0;
+pub trait ReadExt: Read + Sized {
+	fn read_value<T: Readable>(&mut self) -> Result<T,crate::McError> {
+		T::read_from(self)
 	}
-	let mut highest = 1u64 << 63;
-	while value < highest && highest > 0 {
-		highest = highest.overflowing_shr(1).0;
-	}
-	highest
 }
 
-/// A `Writable` struct that writes nothing to the writer.
-/// This is useful when you need to provide a Writable type to a function
-/// but do not want to write anything.
-/// The specific purpose that this was created for was for deleting chunks
-/// from a region file using its edit_chunks function.
-pub struct WriteNothing;
+pub trait SeekExt: Seek + Sized {
+	fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> Result<u64,crate::McError> {
+		seek_offset.seek_to(self)
+	}
 
-impl Writable for WriteNothing {
-    fn write_to<W: Write>(&self, _: &mut W) -> Result<usize,crate::McError> {
-        Ok(0)
-    }
+	fn seek_return(&mut self) -> Result<SeekFrom,crate::McError> {
+		Ok(SeekFrom::Start(self.stream_position()?))
+	}
 }

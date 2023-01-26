@@ -17,7 +17,10 @@ struct JavaWorld<Ct> {
 World:
 	chunks: HashMap<(i32, i32), ChunkType>
 	
-	ChunkManager
+	Chunk Manager
 		load_chunk
 		save_chunk
+	Block Registry
+		register_block
+		find_block
 */

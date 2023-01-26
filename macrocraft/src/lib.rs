@@ -44,6 +44,26 @@ use syn::{
 // 	}
 // }
 
+macro_rules! eat_tokens {($($token:tt)*)=>{};}
+
+eat_tokens!{table_macro_name[$];
+	_ => apple | banana | canteloupe;
+	apple => {
+		{"This is the Apple branch."},
+		{"This is another element of the Apple branch."},
+		{"This is a third element."}
+	};
+	banana => {
+		{"This is the Banana branch."},
+		{"The quick brown fox jumps over the lazy dog."},
+		{"Patience is a virtue."}
+	}
+	canteloupe => {
+		{"This is the Canteloupe branch."},
+		{"Did I spell that right? I can't tell."},
+		{"Why am I always making three elements?"}
+	}
+}
 
 #[proc_macro]
 pub fn nbt(input: TokenStream) -> TokenStream {

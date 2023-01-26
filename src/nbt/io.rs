@@ -1,18 +1,22 @@
 // https://wiki.vg/NBT
 // https://minecraft.fandom.com/wiki/NBT_format
 
-use crate::{nbt::{
-	Map,
-	// McError,
-	tag::{
-		Tag,
-		TagID,
-		ListTag,
-		NamedTag,
+use crate::{
+	nbt::{
+		Map,
+		// McError,
+		tag::{
+			Tag,
+			TagID,
+			ListTag,
+			NamedTag,
+		},
+		family::*,
+		tag_info_table,
 	},
-	family::*,
-	tag_info_table,
-}, McError};
+	ioext::*,
+	McError,
+};
 use std::io::{ Read, Write };
 
 /// Trait that gives the serialization size in bytes of various values.
@@ -61,6 +65,13 @@ pub trait NbtRead: Sized {
 	fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError>;
 }
 
+impl<T: NbtRead> Readable for T {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+        use crate::nbt::io::*;
+		Ok(reader.read_nbt()?)
+    }
+}
+
 /// A trait for writing values to writers.
 /// Minecraft's NBT format demands that values are read in Big-Endian byteorder, so
 /// that means that it is pertinent to implement custom writers for those types.
@@ -70,6 +81,13 @@ pub trait NbtRead: Sized {
 pub trait NbtWrite {
 	/// Write a value to a writer.
 	fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError>;
+}
+
+impl<T: NbtWrite> Writable for T {
+    fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+        use crate::nbt::io::*;
+		Ok(writer.write_nbt(self)?)
+    }
 }
 
 macro_rules! tag_io {

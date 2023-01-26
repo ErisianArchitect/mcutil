@@ -9,12 +9,26 @@ use crate::nbt::tag::*;
 
 use crate::world::region::*;
 
-pub struct BlockState {
+pub struct BlockStateProperty {
 	name: String,
-	properties: Option<HashMap<String, String>>,
+	value: String,
 }
 
-pub struct BlockData {
+pub enum BlockStateProperties {
+	None,
+	Single {
+		name: String,
+		value: String,
+	},
+	Many(HashMap<String, String>),
+}
+
+pub struct BlockState {
+	name: String,
+	properties: BlockStateProperties,
+}
+
+pub struct BlockStates {
 	palette: Vec<BlockState>,
 	data: Vec<u32>,
 }
@@ -66,7 +80,7 @@ pub struct Chunk {
 
 pub struct ChunkSection {
 	y: i8,
-	block_states: Option<Vec<BlockData>>,
+	block_states: BlockStates,
 	biomes: Option<Biomes>,
 	skylight: Option<LightData>,
 	blocklight: Option<LightData>,
