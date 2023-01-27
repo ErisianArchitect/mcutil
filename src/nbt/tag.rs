@@ -596,10 +596,6 @@ impl Display for TagID {
 
 impl Display for Tag {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		// TODO: [ Display for Tag ] format into SNBT.
-		//       But I would like to be able to pretty-print SNBT as well.
-		//       So the solution I would like to go with is to create a formatter
-		//       that is configurable.
 		crate::nbt::format::write_tag(
 			f,
 			self,

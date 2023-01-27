@@ -231,6 +231,7 @@ pub fn write_tag<W: Write>(writer: &mut W, tag: &crate::nbt::tag::Tag, sameline:
 	}
 }
 
+// TODO: This seems like useful code, so I might as well keep it around. Oh, and I'm pretty sure there's a better way to do it.
 /// Measures the length of the resulting string if `n` were converted to a string.
 // const fn num_width(n: i64) -> usize {
 // 	const MAX_ACCUM: i64 = 1000000000000000000;

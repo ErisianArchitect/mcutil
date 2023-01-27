@@ -75,8 +75,8 @@ use crate::for_each_int_type;
 	know if that is something that happens in region files, I have yet to do that
 	research.
 
-	TODO:	Research whether or not Minecraft ever saves a sector offset as
-			occupied while the length at that offset is zero.
+	TODO: Research whether or not Minecraft ever saves a sector offset as
+		: occupied while the length at that offset is zero.
 
 	Following the length is a single byte representing the compression scheme used
 	used to save that chunk. The possible values are 1 for GZip, 2 for ZLib, and 3
@@ -89,6 +89,62 @@ use crate::for_each_int_type;
 	The region file's size MUST be a multiple of 4096. I'm pretty sure Minecraft
 	will reject it if it's not.
 */
+
+// ========[ STRUCTS AND ENUMS ]========================
+
+// TODO: Utilize CompresssionLevel and CompressionScheme as arguments to
+//		 functions that perform compression.
+#[repr(u8)]
+pub enum CompressionLevel {
+	/// Level of 0, uncompressed.
+	None = 0,
+	/// Level of 1, fastest compression.
+	Fastest = 1,
+	/// Level of 5.
+	Balanced = 5,
+	/// Level of 9, which is the best compression but takes the longest time.
+	Best = 9,
+	/// In case you really want a different compression level.
+	/// Must be value between 0 and 9.
+	Precise(u8),
+}
+
+/// Compression scheme used for writing or reading.
+#[repr(u8)]
+pub enum CompressionScheme {
+	/// GZip compression is used.
+	GZip = 1,
+	/// ZLib compression is used.
+	ZLib = 2,
+	/// Data is uncompressed.
+	Uncompressed = 3,
+}
+
+// TODO: Move the following two implementations to the bottom of the file once you
+// decide whether or not you would like to keep it.
+impl Writable for CompressionScheme {
+	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+		match self {
+			CompressionScheme::GZip => writer.write_all(&[1u8])?,
+			CompressionScheme::ZLib => writer.write_all(&[2u8])?,
+			CompressionScheme::Uncompressed => writer.write_all(&[3u8])?,
+		}
+		Ok(1)
+	}
+}
+
+impl Readable for CompressionScheme {
+    fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+        let mut buffer = [0u8;1];
+		reader.read_exact(&mut buffer)?;
+		match buffer[0] {
+			1 => Ok(Self::GZip),
+			2 => Ok(Self::ZLib),
+			3 => Ok(Self::Uncompressed),
+			unexpected => Err(McError::InvalidCompressionScheme(unexpected)),
+		}
+    }
+}
 
 /// A region file contains up to 1024 chunks, which is 32x32 chunks.
 /// This struct represents a chunk coordinate within a region file.
@@ -139,6 +195,8 @@ pub struct RegionReader<R: Read + Seek> {
 pub struct RegionWriter<W: Write + Seek> {
 	writer: W,
 }
+
+// ========[ Implementations   ]========================
 
 impl RegionCoord {
 	/// Create a new RegionCoord.
@@ -533,11 +591,11 @@ impl<R: Read + Seek> RegionReader<R> {
 	/// If the data is not found, it will return None.
 	/// This function does not move the stream before reading. It starts reading from wherever it is in the stream.
 	pub fn read_data_from_sector<T: Readable>(&mut self) -> Result<Option<T>,McError> {
-		// TODO:	_read_from_region_sectors doesn't need to be its own
-		// 			function. It can be moved into this function. But I
-		//			don't feel like doing that right now. I have other
-		//			parts of the codebase to work on.
+		// So I tried to move _read_from_region_sectors() into this function, but
+		// it didn't work out so smoothly due to the way the borrow checker works.
+		// Thankfully it works when it exists as its own function.
 		let result = _read_from_region_sectors(&mut self.reader);
+
 		// If the chunk wasn't found, we'll return None instead of returning an Error. This is so that the error
 		// doesn't get yeeted upstream.
 		if let Err(McError::ChunkNotFound) = result {
@@ -628,6 +686,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 		result
 	}
 
+	//	TODO: Replace compression_level argument with custom type for fine tuning.
 	/// Write a chunk to the region file starting at the current
 	/// position in the file. After writing the chunk, pad bytes will 
 	/// be written to ensure that the region file is a multiple of 4096
@@ -653,9 +712,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 			│ 11.) Return to the starting offset.                                                            │
 			│ 12.) Write length.                                                                             │
 			╰────────────────────────────────────────────────────────────────────────────────────────────────╯*/
-		
-		// TODO: Create homebrew enum to express Compression so that we don't have to expose flate2::Compression
-		
+
 		// Step 01.)
 		let position = self.writer.stream_position()?;
 		// Step 02.)
@@ -759,6 +816,24 @@ impl<W: Write + Seek> RegionWriter<W> {
 	}
 }
 
+// ========[ PUBLIC FUNCTIONS  ]========================
+//	TODO: Public interface.
+/*	What should public functions be able to do?
+	- Verify a region file.
+	- Attept data recovery from corrupted region file.
+	- Check if chunk sectors are sequential.
+	- Rewrite region file so that sectors are sequential.
+	- Remove blank chunks that take up sectors.
+	- Delete chunks.
+	- Write chunks to region file, replacing any existing chunks.
+	- Open series of chunks.
+	- Extract all chunks into directory.
+	- Build region file from directory.
+	- Create detailed report about region file.
+*/
+
+// ========[ PRIVATE FUNCTIONS ]========================
+
 /// This function will read a value from a reader that is an open region
 /// file. The reader is expected to be at the beginning of a 4KiB sector
 /// within the file. This function does not perform that check. It will
@@ -798,14 +873,6 @@ fn _read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<T,Mc
 		}
 		_ => return Err(McError::InvalidCompressionScheme(compression_scheme)),
 	}
-}
-
-/// Write 8KiB of zeroes to writer.
-/// This function assumes that the writer's position is already
-/// at the start of the file.
-/// Returns the number of bytes that were written (Should always be 8192)
-fn _write_empty_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
-	writer.write_zeroes(1024*8)
 }
 
 /// Counts the number of 4KiB sectors required to accomodate `size` bytes.
