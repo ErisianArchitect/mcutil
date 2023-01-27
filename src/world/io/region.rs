@@ -91,7 +91,7 @@ use crate::for_each_int_type;
 */
 
 /// A region file contains up to 1024 chunks, which is 32x32 chunks.
-/// This struct represents a chuunk coordinate within a region file.
+/// This struct represents a chunk coordinate within a region file.
 /// The coordinate can be an absolute coordinate and it will be
 /// normalized to relative coordinates.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -104,14 +104,16 @@ pub struct RegionCoord(u16);
 #[derive(PartialEq, Eq, Clone, Copy, Default)]
 pub struct RegionSector(u32);
 
+/// A 32-bit Unix timestamp.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
 pub struct Timestamp(pub u32);
 
-// TODO: Add other info, such as metadata.
-//		 Ideas:
-//		 - File Creation Time
-//		 - File Modification Time
-//		 - File Size
+/// Info about a region file.
+/// This info includes:
+/// - Metadata
+/// - Chunk Sectors
+/// - Timestamps
+/// - Which chunks are present
 pub struct RegionFileInfo {
 	pub(crate) path: PathBuf,
 	pub(crate) metadata: std::fs::Metadata,
@@ -139,6 +141,10 @@ pub struct RegionWriter<W: Write + Seek> {
 }
 
 impl RegionCoord {
+	/// Create a new RegionCoord.
+	/// The x and z will be mathematically transformed into relative coordinates.
+	/// So if the coordinate given to `new()` is `(32, 32)`, the result will be
+	/// `(0, 0)`.
 	pub fn new(x: u16, z: u16) -> Self {
 		let xmod = (x & 31);
 		let zmod = (z & 31);
@@ -163,10 +169,14 @@ impl RegionCoord {
 		self.into()
 	}
 
+	/// Get a [SeekFrom] value that can be used to seek to the location where
+	/// this chunk's sector offset is stored in the sector offset table.
 	pub fn sector_table_offset(&self) -> SeekFrom {
 		SeekFrom::Start(self.0 as u64 * 4)
 	}
 
+	/// Get a [SeekFrom] value that can be used to seek to the location where
+	/// this chunk's timestamp is stored in the timestamp table.
 	pub fn timestamp_table_offset(&self) -> SeekFrom {
 		SeekFrom::Start(self.0 as u64 * 4 + 4096)
 	}
@@ -212,17 +222,19 @@ impl RegionSector {
 		Self(0)
 	}
 
-	/// The raw 4KiB sector offset.
+	/// The 4KiB sector offset.
 	/// Multiply this by `4096` to get the seek offset.
 	pub fn sector_offset(self) -> u64 {
 		self.0.overflowing_shr(8).0 as u64
 	}
 
+	/// The 4KiB sector offset that marks the end of this sector and the start of
+	/// the next.
 	pub fn sector_end_offset(self) -> u64 {
 		self.sector_offset() + self.sector_count()
 	}
 
-	/// The raw 4KiB sector count.
+	/// The 4KiB sector count.
 	/// Multiply this by `4096` to get the sector size.
 	pub fn sector_count(self) -> u64 {
 		(self.0 & 0xFF) as u64
@@ -262,14 +274,12 @@ macro_rules! __regionsector_impls {
 for_each_int_type!(__regionsector_impls);
 
 impl BitAnd for RegionSector {
-    type Output = bool;
+	type Output = bool;
 
-	/// Checks if two sectors intersect. If they intersect, this will
-	/// return true.
+	/// Checks if two sectors intersect.
+	/// Note: If both sectors start at the same position, but one or both
+	/// of them are size 0, this will return false.
 	fn bitand(self, rhs: Self) -> Self::Output {
-		if self.sector_offset() == rhs.sector_offset() {
-			return true;
-		}
 		!(self.sector_end_offset() <= rhs.sector_offset()
 		|| rhs.sector_end_offset() <= self.sector_offset())
 	}
@@ -288,9 +298,9 @@ impl Writable for RegionSector {
 }
 
 impl Seekable for RegionSector {
-    fn seeker(&self) -> SeekFrom {
-        SeekFrom::Start(self.offset())
-    }
+	fn seeker(&self) -> SeekFrom {
+		SeekFrom::Start(self.offset())
+	}
 }
 
 impl Timestamp {
@@ -302,7 +312,8 @@ impl Timestamp {
 		}
 	}
 
-	pub fn now() -> Timestamp {
+	/// Get a [Timestamp] for the current time (in Utc).
+	pub fn utc_now() -> Timestamp {
 		Timestamp(
 			Utc::now().timestamp() as u32
 		)
@@ -496,6 +507,17 @@ impl<R: Read + Seek> RegionReader<R> {
 		Ok(timestamp)
 	}
 
+	/// Seek to the sector at the given coordinate.
+	pub fn seek_to_sector<C: Into<RegionCoord>>(&mut self, coord: C) -> Result<u64,McError> {
+		let coord: RegionCoord = coord.into();
+		self.reader.seek(coord.sector_table_offset())?;
+		let sector = RegionSector::read_from(&mut self.reader)?;
+		if sector.is_empty() {
+			return Err(McError::ChunkNotFound);
+		}
+		Ok(self.reader.seek(sector.seeker())?)
+	}
+
 	/// Read data from the region file at the specified coordinate.
 	/// Will return None if the data does not exist in the file rather than returning an error.
 	pub fn read_data_at_coord<T: Readable, C: Into<RegionCoord>>(&mut self, coord: C) -> Result<Option<T>,McError> {
@@ -533,31 +555,31 @@ impl<R: Read + Seek> RegionReader<R> {
 }
 
 impl<R: Read + Seek> Read for RegionReader<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.reader.read(buf)
-    }
+	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+		self.reader.read(buf)
+	}
 }
 
 impl<W: Write + Seek> Write for RegionWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.writer.write(buf)
-    }
+	fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+		self.writer.write(buf)
+	}
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.writer.flush()
-    }
+	fn flush(&mut self) -> io::Result<()> {
+		self.writer.flush()
+	}
 }
 
 impl<R: Read + Seek> Seek for RegionReader<R> {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.reader.seek(pos)
-    }
+	fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+		self.reader.seek(pos)
+	}
 }
 
 impl<W: Write + Seek> Seek for RegionWriter<W> {
-    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.writer.seek(pos)
-    }
+	fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+		self.writer.seek(pos)
+	}
 }
 
 impl<W: Write + Seek> RegionWriter<W> {
@@ -613,24 +635,24 @@ impl<W: Write + Seek> RegionWriter<W> {
 	/// This function does not write anything to the header. 
 	/// Returns the RegionSector that was written to.
 	pub fn write_data_to_sector<T: Writable>(&mut self, compression_level: u32, data: &T) -> Result<RegionSector,McError> {
-		/*	╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-			│ Instead of using an in-memory buffer to do compression, I'll write                                                   │
-			│ directly to the writer. This should speed things up a bit, and reduce                                                │
-			│ resource load.                                                                                                       │
-			│ Steps:                                                                                                               │
-			│ 01.) Retrieve starting position in stream (on 4KiB boundary)                                                         │
-			│ 02.) Check that position is on 4KiB boundary.                                                                        │
-			│ 03.) Move the stream forward 4 bytes.                                                                                │
-			│ 04.) Write the compression scheme (2 for ZLib)                                                                       │
-			│ 05.) Create ZLib encoder from writer.                                                                                │
-			│ 06.) Write the data                                                                                                  │
-			│ 07.) release the ZLib encoder                                                                                        │
-			│ 08.) get the final offset                                                                                            │
-			│ 09.) subtract starting offset from final offset then add 4 (for the length that was skipped) to get the length       │
-			│ 10.) write pad zeroes                                                                                                │
-			│ 11.) return to the starting offset                                                                                   │
-			│ 12.) write length                                                                                                    │
-			╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯*/
+		/*	╭────────────────────────────────────────────────────────────────────────────────────────────────╮
+			│ Instead of using an in-memory buffer to do compression, I'll write                             │
+			│ directly to the writer. This should speed things up a bit, and reduce                          │
+			│ resource load.                                                                                 │
+			│ Steps:                                                                                         │
+			│ 01.) Retrieve starting position in stream (on 4KiB boundary).                                  │
+			│ 02.) Check that position is on 4KiB boundary.                                                  │
+			│ 03.) Move the stream forward 4 bytes.                                                          │
+			│ 04.) Write the compression scheme (2 for ZLib) .                                               │
+			│ 05.) Create ZLib encoder from writer.                                                          │
+			│ 06.) Write the data.                                                                           │
+			│ 07.) Release the ZLib encoder.                                                                 │
+			│ 08.) Get the final offset.                                                                     │
+			│ 09.) Subtract starting offset from final offset then add 4 (for the length) to get the length. │
+			│ 10.) Write pad zeroes.                                                                         │
+			│ 11.) Return to the starting offset.                                                            │
+			│ 12.) Write length.                                                                             │
+			╰────────────────────────────────────────────────────────────────────────────────────────────────╯*/
 		
 		// TODO: Create homebrew enum to express Compression so that we don't have to expose flate2::Compression
 		
@@ -786,7 +808,7 @@ fn _write_empty_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> 
 	writer.write_zeroes(1024*8)
 }
 
-/// Counts the number of 4KB sectors required to accomodate `size` bytes.
+/// Counts the number of 4KiB sectors required to accomodate `size` bytes.
 const fn _required_sectors(size: u32) -> u32 {
 	// Yay for branchless programming!
 	let sub = size.overflowing_shr(12).0;
