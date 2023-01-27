@@ -6,6 +6,8 @@ use thiserror::Error;
 /// The master error type.
 #[derive(Debug, Error)]
 pub enum McError {
+	#[error("{0}")]
+	Custom(String),
 	#[error("IO Error: {0}")]
 	IoError(#[from] std::io::Error),
 	#[error("Chunk not found.")]
@@ -22,8 +24,8 @@ pub enum McError {
 	EndTagMarker,
 	#[error("Attempted to save two chunks to the same location.")]
 	DuplicateChunk,
-	#[error("{0}")]
-	Custom(String),
+	#[error("Stream position was not on 4KiB boundary.")]
+	StreamSectorBoundaryError,
 }
 
 impl McError {

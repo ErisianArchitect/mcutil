@@ -23,23 +23,37 @@ pub trait Seekable: Sized {
 }
 
 pub trait WriteExt: Write + Sized {
-	fn write_value<T: Writable>(&mut self, value: T) -> Result<usize,crate::McError> {
+	fn write_value<T: Writable>(&mut self, value: T) -> Result<usize,crate::McError>;
+}
+
+pub trait ReadExt: Read + Sized {
+	fn read_value<T: Readable>(&mut self) -> Result<T,crate::McError>;
+}
+
+impl<W: Write + Sized> WriteExt for W {
+    fn write_value<T: Writable>(&mut self, value: T) -> Result<usize,crate::McError> {
 		value.write_to(self)
 	}
 }
 
-pub trait ReadExt: Read + Sized {
-	fn read_value<T: Readable>(&mut self) -> Result<T,crate::McError> {
+impl<R: Read + Sized> ReadExt for R {
+    fn read_value<T: Readable>(&mut self) -> Result<T,crate::McError> {
 		T::read_from(self)
 	}
 }
 
 pub trait SeekExt: Seek + Sized {
-	fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> Result<u64,crate::McError> {
+	fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> Result<u64,crate::McError>;
+
+	fn seek_return(&mut self) -> Result<SeekFrom,crate::McError>;
+}
+
+impl<T: Seek + Sized> SeekExt for T {
+    fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> Result<u64,crate::McError> {
 		seek_offset.seek_to(self)
 	}
 
-	fn seek_return(&mut self) -> Result<SeekFrom,crate::McError> {
+    fn seek_return(&mut self) -> Result<SeekFrom,crate::McError> {
 		Ok(SeekFrom::Start(self.stream_position()?))
 	}
 }

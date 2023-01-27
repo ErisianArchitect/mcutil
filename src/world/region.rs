@@ -548,6 +548,38 @@ fn _read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<T,Mc
 	}
 }
 
+/// Every header file has an 8KiB (8192) byte header that contains:
+///	1024 Offset values (32-bits)
+/// 1024 Timestamp values (32-bits)
+/// A blank header would just be 8192 zeroes at the beginning of a
+/// region file. This function writes that blank header to a writer.
+/// The writer is expected to already be at the beginning of the file.
+/// This file is simply a shortcut to write 8KiB of zeroes.
+fn _write_blank_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
+	writer.write_zeroes(1024*8)
+}
+
+/// Shortcut for writing a chunk to a writer.
+/// Sector offset is the current sector offset in the writer. The return
+/// value is the sector_offset + the number of sectors written.
+/// This function will also write the new offset to the offset table
+/// of the chunk, then it will write the timestamp to the timestamp
+/// table.
+fn _write_chunk_data<W: Write + Seek, T: Writable>(
+	sector_offset: u32,
+	writer: &mut W,
+	index: usize,
+	chunk: &T,
+	timestamp: Timestamp,
+	compression: Compression,
+) -> Result<u32,crate::McError> {
+	let required_sectors = _write_chunk_to_region(writer, chunk, compression)?;
+	let newoffset = RegionSector::new(sector_offset, required_sectors as u8);
+	_write_offset_to_table(writer, newoffset, index)?;
+	_write_timestamp_to_table(writer, timestamp, index)?;
+	Ok(sector_offset + required_sectors)
+}
+
 /// Writes a chunk to a writer, including pad bytes.
 /// This function assumes that the writer's position is on a 4KiB boundary.
 /// The return value is the number of 4KiB sectors that were written.
@@ -616,38 +648,6 @@ fn _write_timestamp_to_table<W: Write + Seek>(writer: &mut W, timestamp: Timesta
 	// Make sure to return to where we started.
 	writer.seek(SeekFrom::Start(return_offset))?;
 	Ok(())
-}
-
-/// Every header file has an 8KiB (8192) byte header that contains:
-///	1024 Offset values (32-bits)
-/// 1024 Timestamp values (32-bits)
-/// A blank header would just be 8192 zeroes at the beginning of a
-/// region file. This function writes that blank header to a writer.
-/// The writer is expected to already be at the beginning of the file.
-/// This file is simply a shortcut to write 8KiB of zeroes.
-fn _write_blank_region_header<W: Write>(writer: &mut W) -> std::io::Result<u64> {
-	writer.write_zeroes(1024*8)
-}
-
-/// Shortcut for writing a chunk to a writer.
-/// Sector offset is the current sector offset in the writer. The return
-/// value is the sector_offset + the number of sectors written.
-/// This function will also write the new offset to the offset table
-/// of the chunk, then it will write the timestamp to the timestamp
-/// table.
-fn _write_chunk_data<W: Write + Seek, T: Writable>(
-	sector_offset: u32,
-	writer: &mut W,
-	index: usize,
-	chunk: &T,
-	timestamp: Timestamp,
-	compression: Compression,
-) -> Result<u32,crate::McError> {
-	let required_sectors = _write_chunk_to_region(writer, chunk, compression)?;
-	let newoffset = RegionSector::new(sector_offset, required_sectors as u8);
-	_write_offset_to_table(writer, newoffset, index)?;
-	_write_timestamp_to_table(writer, timestamp, index)?;
-	Ok(sector_offset + required_sectors)
 }
 
 /// Copies chunk data from one region file to another.
