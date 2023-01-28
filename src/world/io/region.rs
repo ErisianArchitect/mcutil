@@ -14,7 +14,7 @@ use std::{
 	path::{
 		Path, PathBuf,
 	},
-	ops::*,
+	ops::*, arch::x86_64::_MM_FROUND_NO_EXC, fmt::write,
 };
 
 use chrono::prelude::*;
@@ -552,6 +552,40 @@ impl<R: Read + Seek> RegionReader<R> {
 		Ok(sector)
 	}
 
+	/// Read entire [RegionSector] table from region file.
+	pub fn read_offset_table(&mut self) -> Result<Box<[RegionSector; 1024]>,McError> {
+		let mut table = Box::new([RegionSector(0); 1024]);
+		let original_position = self.reader.stream_position()?;
+		// Make sure that we aren't already at the beginning of the offset table.
+		if original_position != 0 {
+			self.reader.seek(SeekFrom::Start(0))?;
+		}
+		let mut buffer = [0u8; 4];
+		for i in 0..1024 {
+			self.reader.read_exact(&mut buffer)?;
+			table[i] = RegionSector(u32::from_be_bytes(buffer));
+		}
+		self.reader.seek(SeekFrom::Start(original_position))?;
+		Ok(table)
+	}
+
+	/// Read entire [Timestamp] table from region file.
+	pub fn read_timestamp_table(&mut self) -> Result<Box<[Timestamp; 1024]>,McError> {
+		let mut table = Box::new([Timestamp(0); 1024]);
+		let original_position = self.reader.stream_position()?;
+		// Make sure that we aren't already at the beginning of the timestamp table.
+		if original_position != 4096 {
+			self.reader.seek(SeekFrom::Start(4096))?;
+		}
+		let mut buffer = [0u8; 4];
+		for i in 0..1024 {
+			self.reader.read_exact(&mut buffer)?;
+			table[i] = Timestamp(u32::from_be_bytes(buffer));
+		}
+		self.reader.seek(SeekFrom::Start(original_position))?;
+		Ok(table)
+	}
+
 	/// Read a timestamp from the timestamp table in the region file header.
 	/// This function preserves the position in the stream that it starts at. That
 	/// means that it will seek to the header to read the offset, then it will return
@@ -566,6 +600,7 @@ impl<R: Read + Seek> RegionReader<R> {
 	}
 
 	/// Seek to the sector at the given coordinate.
+	/// If the chunk is not found, this function returns Err(McError::ChunkNotFound).
 	pub fn seek_to_sector<C: Into<RegionCoord>>(&mut self, coord: C) -> Result<u64,McError> {
 		let coord: RegionCoord = coord.into();
 		self.reader.seek(coord.sector_table_offset())?;
@@ -591,19 +626,47 @@ impl<R: Read + Seek> RegionReader<R> {
 	/// If the data is not found, it will return None.
 	/// This function does not move the stream before reading. It starts reading from wherever it is in the stream.
 	pub fn read_data_from_sector<T: Readable>(&mut self) -> Result<Option<T>,McError> {
-		// So I tried to move _read_from_region_sectors() into this function, but
-		// it didn't work out so smoothly due to the way the borrow checker works.
-		// Thankfully it works when it exists as its own function.
-		let result = _read_from_region_sectors(&mut self.reader);
 
-		// If the chunk wasn't found, we'll return None instead of returning an Error. This is so that the error
-		// doesn't get yeeted upstream.
-		if let Err(McError::ChunkNotFound) = result {
-			return Ok(None);
+		/// This function will read a value from a reader that is an open region
+		/// file. The reader is expected to be at the beginning of a 4KiB sector
+		/// within the file. This function does not perform that check. It will
+		/// read a 32-bit length, an 8-bit compression scheme (1, 2, or 3), then
+		/// if will create the appropriate decompressor (if applicable) to read
+		/// the value from.
+		/// 
+		/// If the chunk is not present in the file (a length of zero was read)
+		/// then None is returned.
+		fn read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<Option<T>,McError> {
+			let mut buffer = [0u8; 4];
+			// Read the length of the chunk.
+			reader.read_exact(&mut buffer)?;
+			let length = u32::from_be_bytes(buffer) as u64;
+			if length == 0 {
+				return Ok(None);
+			}
+			// Read compression scheme
+			reader.read_exact(&mut buffer[..1])?;
+			let compression_scheme = buffer[0];
+			Ok(Some(match compression_scheme {
+				// GZip
+				1 => {
+					let mut dec = GzDecoder::new(reader.take(length - 1)); // Subtract 1 from length for compression scheme.
+					T::read_from(&mut dec)?
+				}
+				// ZLib
+				2 => {
+					let mut dec = ZlibDecoder::new(reader.take(length - 1)); // Subtract 1 from length for compression scheme.
+					T::read_from(&mut dec)?
+				}
+				// Uncompressed (since a version before 1.15.1)
+				3 => {
+					T::read_from(&mut reader.take(length - 1))? // Subtract 1 from length for compression scheme.
+				}
+				invalid_scheme => return Err(McError::InvalidCompressionScheme(invalid_scheme)),
+			}))
 		}
-		Ok(Some(
-			result?
-		))
+		// Due to the way the borrow checker works, it's best to throw all this code into its own function.
+		read_from_region_sectors(&mut self.reader)
 	}
 
 	/// Finish reading and return the contained reader.
@@ -712,7 +775,6 @@ impl<W: Write + Seek> RegionWriter<W> {
 			│ 11.) Return to the starting offset.                                                            │
 			│ 12.) Write length.                                                                             │
 			╰────────────────────────────────────────────────────────────────────────────────────────────────╯*/
-
 		// Step 01.)
 		let position = self.writer.stream_position()?;
 		// Step 02.)
@@ -722,43 +784,32 @@ impl<W: Write + Seek> RegionWriter<W> {
 		}
 		// Step 03.)
 		self.writer.seek(SeekFrom::Current(4))?;
-
 		// Compression scheme buffer. (2 for ZLib)
 		let compression_scheme = [2u8; 1];
-
 		// Step 04.)
 		self.writer.write_all(&compression_scheme)?;
-		
 		// Step 05.)
 		let mut compressor = ZlibEncoder::new(
 			&mut self.writer,
 			Compression::new(compression_level.min(9))
 		);
-
 		// Step 06.)
 		data.write_to(&mut compressor)?;
-
 		// Step 07.)
 		compressor.finish()?;
-
 		// Step 08.)
 		let final_offset = self.writer.stream_position()?;
-
 		// Step 09.)
 		let length = (final_offset - position) + 4;
 		let mut length_buffer = length.to_be_bytes();
-
 		// Step 10.)
 		let padsize = _pad_size(length + 4);
 		self.writer.write_zeroes(padsize)?;
-
 		// Step 11.)
 		self.writer.seek(SeekFrom::Start(position))?;
-
 		// Step 12.)
 		self.writer.write_all(&length_buffer)?;
 		let length = length as u32;
-
 		Ok(RegionSector::new(
 			// Shifting right 12 bits is a shortcut to get the 4KiB sector offset.
 			position.overflowing_shr(12).0 as u32,
@@ -794,21 +845,19 @@ impl<W: Write + Seek> RegionWriter<W> {
 		}
 		// Copy the length to the writer. Very important step.
 		self.write_all(&length_buffer)?;
-
 		copy_bytes(reader, &mut self.writer, length as u64)?;
-
 		// The padsize is the number of bytes required to to put
 		// the writer on a 4KiB boundary. You have to add 4 because you need
 		// to include the 4 bytes for the length.
 		let padsize = _pad_size((length + 4) as u64);
 		self.writer.write_zeroes(padsize)?;
-
 		Ok(RegionSector::new(
 			sector_offset,
 			// + 4 to include the 4 bytes holding the length.
 			_required_sectors(length + 4) as u8
 		))
 	}
+
 
 	/// Returns the inner writer.
 	pub fn finish(self) -> W {
@@ -819,61 +868,94 @@ impl<W: Write + Seek> RegionWriter<W> {
 // ========[ PUBLIC FUNCTIONS  ]========================
 //	TODO: Public interface.
 /*	What should public functions be able to do?
-	- Verify a region file.
-	- Attept data recovery from corrupted region file.
+	- Verify a region file. (Create custom type to hold the region integrity information)
+		- Check that region file is multiple of 4KiB in size.
+		- Check that region file is at least 8KiB in size.
+		- Check that all sector offsets in the offset table are non-intersecting. (This may prove to be a bit difficult.)
+		- Check that all timestamps are less than current time.
+		- Check that all allocated sectors have valid NBT data.
+		- (Maybe?) Check that each chunk's NBT data has a valid structure.
+		- Check that each allocated chunk has valid `xPos` and zPos` nodes, and the xPos and zPos are correct.
+	- Attempt data recovery from corrupted region file.
+		This should be fairly simple. Just walk through the region file looking for each chunk that's present.
+		Attempt to read that chunk from the sector, and if it is successfully read, it is written to the new
+		region.
 	- Check if chunk sectors are sequential.
+		This shouldn't be necessary, but I thought it would be interesting to do anyway.
 	- Rewrite region file so that sectors are sequential.
+		Yet again, I don't think that this should be necessary.
 	- Remove blank chunks that take up sectors.
+		If there is a sector offset in the offset table that points to a non-empty sector, but the `length` value at
+		the beginning of that sector is zero, that sector can be effectively removed.
 	- Delete chunks.
+		Rebuild region file with all chunks except the ones that you want to delete.
 	- Write chunks to region file, replacing any existing chunks.
+		Just like deleting, this will need to rebuild the region file, injecting the chunks that you would like to write and
+		copying the ones you aren't trying to overwrite.
 	- Open series of chunks.
+		This could be more than one function depending on needs. But I would like to be able to open multiple chunks at the same
+		time. Either by selecting a rectangular region, or by providing the exact coordinates of the chunks that you would like
+		to open.
 	- Extract all chunks into directory.
+		Extract all chunks in region file into a directory, each chunk being an NBT file.
 	- Build region file from directory.
+		Take chunks from within a directory and build them into a region file.
 	- Create detailed report about region file.
+		Off the top of my head, this report could include things like number of chunks, most recent write time,
+		earliest write time, time per chunk, etc. There are all kinds of things that could be included in such a report.
+	- Recompress file
+		rebuild a file with a new compression scheme, or none at all!
 */
 
-// ========[ PRIVATE FUNCTIONS ]========================
+/// This function will sequentially rebuild a region file.
+/// There likely isn't really a need for this, but it could
+/// potentially be useful in some regard.
+/// `input` and `output` can be the same, this function writes to a temporary file
+/// before copying over the original file.
+pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: P2) -> Result<u64,McError> {
+	fn _rebuild(input: &Path, output: &Path) -> Result<u64,McError> {
+		let input_file = File::open(input)?;
+		// Since this function may want to overwrite the input region, it is
+		// best that we use a temporary file to write to before copying it
+		// over the old region file.		
+		let output_file = tempfile::NamedTempFile::new()?;
+		// To speed up writing the offset table to the file, I can store
+		// the table in memory while the new region file is being built.
+		let mut sectors = [RegionSector::empty(); 1024];
+		let mut writer = RegionWriter::new(
+			BufWriter::with_capacity(4096, output_file)
+		);
+		let mut reader = RegionReader::new(
+			BufReader::with_capacity(4096, input_file)
+		);
+		// Write blank sector offset table.
+		writer.write_zeroes(4096)?;
+		// Copy timestamp table since it is assumed that this won't change.
+		copy_bytes(&mut reader, &mut writer, 4096)?;
 
-/// This function will read a value from a reader that is an open region
-/// file. The reader is expected to be at the beginning of a 4KiB sector
-/// within the file. This function does not perform that check. It will
-/// read a 32-bit length, an 8-bit compression scheme (1, 2, or 3), then
-/// if will create the appropriate decompressor (if applicable) to read
-/// the value from.
-/// 
-/// If the chunk is not present in the file (a length of zero was read)
-/// then `Err(McError::ChunkNotFound)` is returned.
-fn _read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<T,McError> {
-	let mut buffer = [0u8; 4];
-	// Read the length of the chunk.
-	reader.read_exact(&mut buffer)?;
-	// 1 is subtracted from the lenth that is read because there is 1 byte for the
-	// compression scheme, and the rest of the length is the data.
-	let length = u32::from_be_bytes(buffer) as u64;
-	if length == 0 {
-		return Err(McError::ChunkNotFound);
+		// Write sectors from reader
+		for i in 0..1024 {
+			// to spare confusion:
+			// let-else (https://rust-lang.github.io/rfcs/3137-let-else.html)
+			let Some(_) = _filter_chunk_not_found(reader.seek_to_sector(i))?
+			else { continue };
+			sectors[i] = writer.copy_chunk_from(&mut reader)?;
+		}
+		writer.seek(SeekFrom::Start(0))?;
+		// Write the sector offset table
+		for i in 0..1024 {
+			writer.write_value(sectors[i])?;
+		}
+
+		// Overwrite output file with tempfile.
+		let writer = writer.finish();
+		let tempfile_path = writer.get_ref().path();
+		Ok(std::fs::copy(tempfile_path, output)?)
 	}
-	// Read compression scheme
-	reader.read_exact(&mut buffer[..1])?;
-	let compression_scheme = buffer[0];
-	match compression_scheme {
-		// GZip
-		1 => {
-			let mut dec = GzDecoder::new(reader.take(length - 1));
-			T::read_from(&mut dec)
-		}
-		// ZLib
-		2 => {
-			let mut dec = ZlibDecoder::new(reader.take(length - 1));
-			T::read_from(&mut dec)
-		}
-		// Uncompressed (since a version before 1.15.1)
-		3 => {
-			T::read_from(&mut reader.take(length - 1))
-		}
-		_ => return Err(McError::InvalidCompressionScheme(compression_scheme)),
-	}
+	_rebuild(input.as_ref(), output.as_ref())
 }
+
+// ========[ PRIVATE FUNCTIONS ]========================
 
 /// Counts the number of 4KiB sectors required to accomodate `size` bytes.
 const fn _required_sectors(size: u32) -> u32 {
@@ -892,6 +974,16 @@ const fn _required_sectors(size: u32) -> u32 {
 const fn _pad_size(size: u64) -> u64 {
 	// Some bit-level hacking makes this really easy.
 	(4096 - (size & 4095)) & 4095
+}
+
+/// Takes a [Result<T,McError>] and transforms it into a [Result<Option<T>,McError>]
+/// where a value of [Err(McError::ChunkNotFound)] is transformed into [Ok(None)].
+fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, McError> {
+	match result {
+		Ok(ok) => Ok(Some(ok)),
+		Err(McError::ChunkNotFound) => Ok(None),
+		Err(other) => Err(other),
+	}
 }
 
 #[cfg(test)]
