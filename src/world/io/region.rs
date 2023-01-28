@@ -90,6 +90,16 @@ use crate::for_each_int_type;
 	will reject it if it's not.
 */
 
+/*	Planning:
+	At some point, there will be a `World` type that will manage
+	a Minecraft world. This world type will load chunks for editing
+	then save them when necessary.
+	In order to make this work properly, I need to create a type
+	that keeps track of loaded chunks in a region so that it can save
+	those chunks once requested. That means that I'll also need to come
+	up with a data structure for chunks.
+*/
+
 // ========[ STRUCTS AND ENUMS ]========================
 
 // TODO: Utilize CompresssionLevel and CompressionScheme as arguments to
@@ -173,8 +183,8 @@ pub struct Timestamp(pub u32);
 pub struct RegionFileInfo {
 	pub(crate) path: PathBuf,
 	pub(crate) metadata: std::fs::Metadata,
-	pub(crate) offsets: Vec<RegionSector>,
-	pub(crate) timestamps: Vec<Timestamp>,
+	pub(crate) offsets: Box<[RegionSector]>,
+	pub(crate) timestamps: Box<[Timestamp]>,
 	pub(crate) present_bits: Box<[u64; 16]>,
 }
 
@@ -345,13 +355,13 @@ impl BitAnd for RegionSector {
 
 impl Readable for RegionSector {
 	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
-		Ok(Self(u32::nbt_read(reader)?))
+		Ok(Self(reader.read_value()?))
 	}
 }
 
 impl Writable for RegionSector {
 	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
-		Ok(self.0.nbt_write(writer)?)
+		writer.write_value(self.0)
 	}
 }
 
@@ -437,13 +447,13 @@ impl RegionFileInfo {
 		let mut reader = BufReader::with_capacity(4096, file);
 		// Read the Chunk Offsets (32x32)
 		// 		The Chunk Offsets tell us the location within the file and size of chunks.
-		let offsets: Vec<RegionSector> = (0..32*32).map(|_|
+		let offsets: Box<[RegionSector]> = (0..32*32).map(|_|
 			RegionSector::read_from(&mut reader)
-		).collect::<Result<Vec<RegionSector>,crate::McError>>()?;
+		).collect::<Result<Box<[RegionSector]>,crate::McError>>()?;
 		// Read the timestamps (32x32)
-		let timestamps: Vec<Timestamp> = (0..32*32).map(|_|
+		let timestamps: Box<[Timestamp]> = (0..32*32).map(|_|
 			Timestamp::read_from(&mut reader)
-		).collect::<Result<Vec<Timestamp>,crate::McError>>()?;
+		).collect::<Result<Box<[Timestamp]>,crate::McError>>()?;
 		let mut bits: Box<[u64; 16]> = Box::new([0; 16]);
 		let mut buffer: [u8; 4] = [0; 4];
 		let counter = 0;
@@ -562,8 +572,7 @@ impl<R: Read + Seek> RegionReader<R> {
 		}
 		let mut buffer = [0u8; 4];
 		for i in 0..1024 {
-			self.reader.read_exact(&mut buffer)?;
-			table[i] = RegionSector(u32::from_be_bytes(buffer));
+			table[i] = self.reader.read_value()?;
 		}
 		self.reader.seek(SeekFrom::Start(original_position))?;
 		Ok(table)
@@ -858,7 +867,6 @@ impl<W: Write + Seek> RegionWriter<W> {
 		))
 	}
 
-
 	/// Returns the inner writer.
 	pub fn finish(self) -> W {
 		self.writer
@@ -928,31 +936,40 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 		let mut reader = RegionReader::new(
 			BufReader::with_capacity(4096, input_file)
 		);
+		for i in 0..1024 {
+			sectors[i] = RegionSector::read_from(&mut reader)?;
+		}
 		// Write blank sector offset table.
 		writer.write_zeroes(4096)?;
+
 		// Copy timestamp table since it is assumed that this won't change.
 		copy_bytes(&mut reader, &mut writer, 4096)?;
 
 		// Write sectors from reader
 		for i in 0..1024 {
-			// to spare confusion:
-			// let-else (https://rust-lang.github.io/rfcs/3137-let-else.html)
-			let Some(_) = _filter_chunk_not_found(reader.seek_to_sector(i))?
-			else { continue };
+			if sectors[i].is_empty() {
+				continue;
+			}
+			reader.seek(sectors[i].seeker())?;
 			sectors[i] = writer.copy_chunk_from(&mut reader)?;
 		}
-		writer.seek(SeekFrom::Start(0))?;
-		// Write the sector offset table
+		writer.writer.seek(SeekFrom::Start(0))?;
 		for i in 0..1024 {
-			writer.write_value(sectors[i])?;
+			sectors[i].write_to(&mut writer.writer)?;
 		}
-
+		writer.flush();
 		// Overwrite output file with tempfile.
 		let writer = writer.finish();
 		let tempfile_path = writer.get_ref().path();
 		Ok(std::fs::copy(tempfile_path, output)?)
 	}
 	_rebuild(input.as_ref(), output.as_ref())
+}
+
+/// Checks that all present chunks in a region file are sequential.
+/// That is, it checks that chunks are written in a sequential order.
+pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError> {
+	todo!()
 }
 
 // ========[ PRIVATE FUNCTIONS ]========================
@@ -988,6 +1005,22 @@ fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, Mc
 
 #[cfg(test)]
 mod tests {
+    use crate::McError;
+
+
+	#[test]
+	fn region_coord_test() -> Result<(),McError> {
+		use super::*;
+		let sector = RegionSector::new(0x010203, 0x04);
+		let mut file = File::create("buffer.dat")?;
+		sector.write_to(&mut file);
+		drop(file);
+		let mut file = File::open("buffer.dat")?;
+		let result = RegionSector::read_from(&mut file)?;
+		println!("Sector 1: {} {}", sector.sector_offset(), sector.sector_count());
+		println!("Sector 2: {} {}", result.sector_offset(), result.sector_count());
+		Ok(())
+	}
 	
 	#[test]
 	fn required_sectors_test() {
