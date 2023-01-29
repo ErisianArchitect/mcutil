@@ -14,10 +14,11 @@ use std::{
 	path::{
 		Path, PathBuf,
 	},
-	ops::*, arch::x86_64::_MM_FROUND_NO_EXC, fmt::write,
+	ops::*, arch::x86_64::_MM_FROUND_NO_EXC, fmt::{write, Debug},
 };
 
 use chrono::prelude::*;
+use chumsky::primitive::todo;
 use flate2::{
 	read::GzDecoder,
 	read::ZlibDecoder,
@@ -32,6 +33,7 @@ use crate::world::io::*;
 use crate::for_each_int_type;
 
 /* Map of file:
+	Traits
 	Structs
 	Implementations
 	Public functions
@@ -99,6 +101,11 @@ use crate::for_each_int_type;
 	those chunks once requested. That means that I'll also need to come
 	up with a data structure for chunks.
 */
+// ========[ Traits            ]========================
+
+pub trait RegionTableItem {
+	const OFFSET: u64;
+}
 
 // ========[ STRUCTS AND ENUMS ]========================
 
@@ -144,8 +151,8 @@ impl Writable for CompressionScheme {
 }
 
 impl Readable for CompressionScheme {
-    fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
-        let mut buffer = [0u8;1];
+	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+		let mut buffer = [0u8;1];
 		reader.read_exact(&mut buffer)?;
 		match buffer[0] {
 			1 => Ok(Self::GZip),
@@ -153,7 +160,7 @@ impl Readable for CompressionScheme {
 			3 => Ok(Self::Uncompressed),
 			unexpected => Err(McError::InvalidCompressionScheme(unexpected)),
 		}
-    }
+	}
 }
 
 /// A region file contains up to 1024 chunks, which is 32x32 chunks.
@@ -174,6 +181,23 @@ pub struct RegionSector(u32);
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
 pub struct Timestamp(pub u32);
 
+// I have an idea! I'll create a special abstraction for the RegionSector
+// table and the Timestamp table.
+
+/// A table of 1024 elements that contain information related to
+/// a Minecraft chunk within a Region file.
+#[derive(Debug, Clone)]
+pub struct RegionTable<T: RegionTableItem> {
+	table: Box<[T; 1024]>,
+}
+
+/// A table of 1024 [RegionSector] elements for each potential chunk in
+/// a 32x32 chunk region file.
+pub type SectorTable = RegionTable<RegionSector>;
+/// A table of 1024 [Timestamp] elements for each potential chunk in a
+/// 32x32 chunk region file.
+pub type TimestampTable = RegionTable<Timestamp>;
+
 /// Info about a region file.
 /// This info includes:
 /// - Metadata
@@ -183,8 +207,8 @@ pub struct Timestamp(pub u32);
 pub struct RegionFileInfo {
 	pub(crate) path: PathBuf,
 	pub(crate) metadata: std::fs::Metadata,
-	pub(crate) offsets: Box<[RegionSector; 1024]>,
-	pub(crate) timestamps: Box<[Timestamp; 1024]>,
+	pub sectors: SectorTable,
+	pub timestamps: TimestampTable,
 	pub(crate) present_bits: Box<[u64; 16]>,
 }
 
@@ -437,6 +461,61 @@ impl TryFrom<Timestamp> for DateTime<Utc> {
 	}
 }
 
+impl RegionTableItem for RegionSector {
+	const OFFSET: u64 = 0;
+}
+
+impl RegionTableItem for Timestamp {
+	const OFFSET: u64 = 4096;
+}
+
+impl<T: RegionTableItem> RegionTable<T> {
+	pub const OFFSET: u64 = T::OFFSET;
+	pub fn offset() -> u64 {
+		Self::OFFSET
+	}
+
+	pub fn seeker() -> SeekFrom {
+		SeekFrom::Start(Self::OFFSET)
+	}
+}
+
+impl<C: Into<RegionCoord>,T: RegionTableItem> Index<C> for RegionTable<T> {
+	type Output = T;
+
+	fn index(&self, index: C) -> &Self::Output {
+		let coord: RegionCoord = index.into();
+		&self.table[coord.index()]
+	}
+}
+
+impl<C: Into<RegionCoord>,T: RegionTableItem> IndexMut<C> for RegionTable<T> {
+	fn index_mut(&mut self, index: C) -> &mut Self::Output {
+		let coord: RegionCoord = index.into();
+		&mut self.table[coord.index()]
+	}
+}
+
+impl<T: Readable + Debug + RegionTableItem> Readable for RegionTable<T> {
+	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+		let table: Box<[T; 1024]> = (0..1024).map(|_| {
+			T::read_from(reader)
+		}).collect::<Result<Box<[T]>,McError>>()?
+		.try_into().unwrap();
+		Ok(Self { table })
+	}
+}
+
+impl<T: Writable + Debug + RegionTableItem + Sized> Writable for RegionTable<T> {
+	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+		let mut write_size: usize = 0;
+		for i in 0..1024 {
+			write_size += self.table[i].write_to(writer)?;
+		}
+		Ok(write_size)
+	}
+}
+
 impl RegionFileInfo {
 
 	// TODO: Better documentation.
@@ -445,25 +524,16 @@ impl RegionFileInfo {
 		let file = File::open(path.as_ref())?;
 		let metadata = std::fs::metadata(path.as_ref())?;
 		let mut reader = BufReader::with_capacity(4096, file);
-		// Read the Chunk Offsets (32x32)
-		// 		The Chunk Offsets tell us the location within the file and size of chunks.
-		let offsets: Box<[RegionSector]> = (0..32*32).map(|_|
-			RegionSector::read_from(&mut reader)
-		).collect::<Result<Box<[RegionSector]>,crate::McError>>()?;
-		// Read the timestamps (32x32)
-		let timestamps: Box<[Timestamp]> = (0..32*32).map(|_|
-			Timestamp::read_from(&mut reader)
-		).collect::<Result<Box<[Timestamp]>,crate::McError>>()?;
 
-		let offsets: Box<[RegionSector; 1024]> = offsets.try_into().unwrap();
-		let timestamps: Box<[Timestamp; 1024]> = timestamps.try_into().unwrap();
+		let sector_table = SectorTable::read_from(&mut reader)?;
+		let timestamp_table = TimestampTable::read_from(&mut reader)?;
 
 		let mut bits: Box<[u64; 16]> = Box::new([0; 16]);
 		let mut buffer = [0u8; 4];
 		let counter = 0;
 		for i in 0..1024 {
-			if !offsets[i].is_empty() {
-				reader.seek(offsets[i].seeker())?;
+			if !sector_table.table[i].is_empty() {
+				reader.seek(sector_table.table[i].seeker())?;
 				reader.read_exact(&mut buffer)?;
 				let length = u32::from_be_bytes(buffer);
 				if length != 0 {
@@ -475,8 +545,8 @@ impl RegionFileInfo {
 		Ok(Self {
 			path: PathBuf::from(path.as_ref()),
 			metadata,
-			offsets,
-			timestamps,
+			sectors: sector_table,
+			timestamps: timestamp_table,
 			present_bits: bits,
 		})
 	}
@@ -498,12 +568,12 @@ impl RegionFileInfo {
 
 	/// Get a RegionSector for the provided coordinate.
 	pub fn get_offset<C: Into<RegionCoord>>(&self, coord: C) -> RegionSector {
-		self.offsets[coord.into().index()]
+		self.sectors[coord]
 	}
 
 	/// Get the Timestamp for the provided coordinate.
 	pub fn get_timestamp<C: Into<RegionCoord>>(&self, coord: C) -> Timestamp {
-		self.timestamps[coord.into().index()]
+		self.timestamps[coord]
 	}
 
 	/// Checks if the chunk exists in the region file.
@@ -550,6 +620,13 @@ impl<R: Read + Seek> RegionReader<R> {
 	pub fn new(reader: R) -> Self {
 		Self {
 			reader,
+		}
+	}
+
+	pub fn with_capacity<Or: Read + Seek>(capacity: usize, inner: Or) -> RegionReader<BufReader<Or>> {
+		let reader = BufReader::with_capacity(capacity, inner);
+		RegionReader {
+			reader
 		}
 	}
 
@@ -750,7 +827,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 		result
 	}
 
-	/// Write a timestamp to the timestamp table of the Region file.
+	/// Write a [Timestamp] to the [Timestamp] table of the Region file.
 	pub fn write_timestamp_at_coord<C: Into<RegionCoord>, O: Into<Timestamp>>(&mut self, coord: C, timestamp: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
 		let oldpos = self.writer.seek_return()?;
@@ -988,7 +1065,134 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 /// Checks that all present chunks in a region file are sequential.
 /// That is, it checks that chunks are written in a sequential order.
 pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError> {
-	todo!()
+	let file = File::open(region.as_ref())?;
+	let mut reader = BufReader::with_capacity(4096, file);
+
+	let table = SectorTable::read_from(&mut reader)?;
+
+	let mut last = table[0];
+	for i in 1..1024 {
+		// skip empty sectors
+		if table[i].is_empty() {
+			continue;
+		}
+		// If the current sector offset is less than or equal to
+		// the previous, that means that the chunks are not sequential.
+		if table[i].sector_offset() <= last.sector_offset() {
+			return Ok(false);
+		}
+		last = table[i];
+	}
+	Ok(true)
+}
+
+/// Counts how many sectors are wasted in the region file.
+/// This probably going to return 0, but if it ever does return
+/// something besides 0, please let me know. I'm curious.
+pub fn wasted_sectors(region: impl AsRef<Path>) -> Result<u32,McError> {
+	let file = File::open(region.as_ref())?;
+	let mut reader = BufReader::with_capacity(4096, file);
+
+	let table = SectorTable::read_from(&mut reader)?;
+
+	let mut waste_count = 0u32;
+
+	for i in 0..1024 {
+		// skip empty sectors
+		if table[i].is_empty() {
+			continue;
+		}
+		reader.seek(table[i].seeker())?;
+		let length = u32::read_from(&mut reader)?;
+		// This means the sector was wasted.
+		if length == 0 {
+			waste_count += table[i].sector_count() as u32;
+		}
+	}
+
+	Ok(waste_count)
+}
+
+// pub fn read_chunks<I: Into<RegionCoord>, It: Iterator<Item = I>, T: Readable>(region_file: impl AsRef<Path>,it: It) -> Result<Vec<(RegionCoord, Option<T>)>, McError> {
+// 	let file = File::open(region_file.as_ref())?;
+// 	let mut reader = RegionReader::with_capacity(4096, file);
+// 	let items = it.try_for_each(|coord| {
+// 		let coord: RegionCoord = coord.into();
+// 		let dat = reader.read_data_at_coord::<T,_>(coord)?;
+// 		Ok((coord, dat))
+// 	}).collect();
+// 	Ok(items)
+// }
+
+/// Extract all chunks in a region file into an output directory.
+pub fn extract_all_chunks<T: Writable + Readable>(
+	region_file: impl AsRef<Path>,
+	output_directory: impl AsRef<Path>,
+) -> Result<(),McError> {
+	// Iterate through all that are present in Region File, then deposit
+	// them into the provided output_directory with 
+	// the format: chunk.{x}.{z}.nbt.
+	if !output_directory.as_ref().is_dir() {
+		std::fs::create_dir_all(output_directory.as_ref())?;
+	}
+	let region_file = File::open(region_file.as_ref())?;
+	let mut reader = RegionReader::new(
+		BufReader::with_capacity(4096, region_file)
+	);
+
+	// Load the sector table into memory so we don't need to needlessly
+	// seek around the file gathering sector data from the table.
+	let sectors = SectorTable::read_from(&mut reader)?;
+	for i in 0..1024 {
+		// Skip empty sectors because there's nothing to extract.
+		if sectors.table[i].is_empty() {
+			continue;
+		}
+		reader.reader.seek(sectors.table[i].seeker())?;
+		let Some(chunk) = reader.read_data_from_sector::<T>()? else { continue; };
+		let coord = RegionCoord::from(i);
+		let out_path = output_directory.as_ref().join(format!("chunk.{}.{}.nbt", coord.x(), coord.z()));
+		let chunk_file = File::create(out_path)?;
+		let mut writer = BufWriter::with_capacity(4096, chunk_file);
+
+		chunk.write_to(&mut writer)?;
+		
+	}
+	Ok(())
+}
+
+/// Since [extract_all_chunks] requires a type to be provided that is
+/// readable and writable, one may be tempted to provide the function
+/// with the [crate::nbt::tag::NamedTag] type, which would cause the
+/// deserialization of the NBT tree, then the reserialization on the
+/// other side. This would be an uneccessary step, so we can cut it
+/// out by only copying the data itself.
+pub fn buffered_extract_all_chunks(
+	region_file: impl AsRef<Path>,
+	output_directory: impl AsRef<Path>,
+) -> Result<(),McError> {
+	/// A special type created specifically for the purpose of holding a
+	/// temporary buffer containing the chunk data.
+	/// This data is normally NBT data, but we don't need to deserialize
+	/// the NBT tree only to the then reserialize that same NBT tree.
+	struct ChunkBuffer(Box<[u8]>);
+
+	impl Readable for ChunkBuffer {
+		fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+			let mut buffer = Vec::with_capacity(4096);
+			reader.read_to_end(&mut buffer)?;
+			Ok(Self(buffer.into_boxed_slice()))
+		}
+	}
+
+	impl Writable for ChunkBuffer {
+		fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+			writer.write_all(self.0.as_ref())?;
+			Ok(self.0.len())
+		}
+	}
+
+	extract_all_chunks::<ChunkBuffer>(region_file, output_directory)
 }
 
 // ========[ PRIVATE FUNCTIONS ]========================
@@ -1024,12 +1228,17 @@ fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, Mc
 
 #[cfg(test)]
 mod tests {
-    use crate::McError;
+	use super::*;
 
+	#[test]
+	fn region_file_info_test() -> Result<(),McError> {
+		let info = RegionFileInfo::load("r.0.0.mca")?;
+		let sect = info.sectors[(1,3)];
+		Ok(())
+	}
 
 	#[test]
 	fn region_coord_test() -> Result<(),McError> {
-		use super::*;
 		let sector = RegionSector::new(0x010203, 0x04);
 		let mut file = File::create("buffer.dat")?;
 		sector.write_to(&mut file);
@@ -1043,7 +1252,6 @@ mod tests {
 	
 	#[test]
 	fn required_sectors_test() {
-		use super::*;
 		assert_eq!(0, _required_sectors(0));
 		assert_eq!(1, _required_sectors(1));
 		assert_eq!(1, _required_sectors(4095));
@@ -1053,7 +1261,6 @@ mod tests {
 
 	#[test]
 	fn pad_test() {
-		use super::*;
 		assert_eq!(0, _pad_size(4096));
 		assert_eq!(0, _pad_size(8192));
 		assert_eq!(4095, _pad_size(4097));
