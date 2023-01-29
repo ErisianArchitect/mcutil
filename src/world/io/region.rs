@@ -160,18 +160,18 @@ impl Readable for CompressionScheme {
 /// This struct represents a chunk coordinate within a region file.
 /// The coordinate can be an absolute coordinate and it will be
 /// normalized to relative coordinates.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug,)]
 pub struct RegionCoord(u16);
 
 /// Offset and size are packed together.
 /// Having these two values packed together saves 4KiB per RegionFile.
 /// It just seems a little wasteful to use more memory than is necessary.
 /// |Offset:3|Size:1|
-#[derive(PartialEq, Eq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Default)]
 pub struct RegionSector(u32);
 
 /// A 32-bit Unix timestamp.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default, Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
 pub struct Timestamp(pub u32);
 
 /// Info about a region file.
@@ -183,8 +183,8 @@ pub struct Timestamp(pub u32);
 pub struct RegionFileInfo {
 	pub(crate) path: PathBuf,
 	pub(crate) metadata: std::fs::Metadata,
-	pub(crate) offsets: Box<[RegionSector]>,
-	pub(crate) timestamps: Box<[Timestamp]>,
+	pub(crate) offsets: Box<[RegionSector; 1024]>,
+	pub(crate) timestamps: Box<[Timestamp; 1024]>,
 	pub(crate) present_bits: Box<[u64; 16]>,
 }
 
@@ -454,12 +454,16 @@ impl RegionFileInfo {
 		let timestamps: Box<[Timestamp]> = (0..32*32).map(|_|
 			Timestamp::read_from(&mut reader)
 		).collect::<Result<Box<[Timestamp]>,crate::McError>>()?;
+
+		let offsets: Box<[RegionSector; 1024]> = offsets.try_into().unwrap();
+		let timestamps: Box<[Timestamp; 1024]> = timestamps.try_into().unwrap();
+
 		let mut bits: Box<[u64; 16]> = Box::new([0; 16]);
-		let mut buffer: [u8; 4] = [0; 4];
+		let mut buffer = [0u8; 4];
 		let counter = 0;
 		for i in 0..1024 {
 			if !offsets[i].is_empty() {
-				reader.seek(SeekFrom::Start(offsets[i].offset()))?;
+				reader.seek(offsets[i].seeker())?;
 				reader.read_exact(&mut buffer)?;
 				let length = u32::from_be_bytes(buffer);
 				if length != 0 {
@@ -549,7 +553,7 @@ impl<R: Read + Seek> RegionReader<R> {
 		}
 	}
 
-	/// Read a sector offset from the sector offset table in the region file header.
+	/// Read a [RegionSector] from the [RegionSector] table in the region file header.
 	/// This function preserves the position in the stream that it starts at. That
 	/// means that it will seek to the header to read the offset, then it will return
 	/// to the position it started at when the function was called.
@@ -595,7 +599,7 @@ impl<R: Read + Seek> RegionReader<R> {
 		Ok(table)
 	}
 
-	/// Read a timestamp from the timestamp table in the region file header.
+	/// Read a [RegionSector] from the [RegionSector] table in the region file header.
 	/// This function preserves the position in the stream that it starts at. That
 	/// means that it will seek to the header to read the offset, then it will return
 	/// to the position it started at when the function was called.
@@ -609,7 +613,7 @@ impl<R: Read + Seek> RegionReader<R> {
 	}
 
 	/// Seek to the sector at the given coordinate.
-	/// If the chunk is not found, this function returns Err(McError::ChunkNotFound).
+	/// If the chunk is not found, this function returns [Err(McError::ChunkNotFound)].
 	pub fn seek_to_sector<C: Into<RegionCoord>>(&mut self, coord: C) -> Result<u64,McError> {
 		let coord: RegionCoord = coord.into();
 		self.reader.seek(coord.sector_table_offset())?;
@@ -735,7 +739,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 	}
 
 	/// Write an offset to the offset table of the Region file.
-	pub fn write_offset<C: Into<RegionCoord>,O: Into<RegionSector>>(&mut self, coord: C, offset: O) -> Result<usize,McError> {
+	pub fn write_offset_at_coord<C: Into<RegionCoord>,O: Into<RegionSector>>(&mut self, coord: C, offset: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
 		let oldpos = self.writer.seek_return()?;
 		self.writer.seek(coord.sector_table_offset())?;
@@ -747,7 +751,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 	}
 
 	/// Write a timestamp to the timestamp table of the Region file.
-	pub fn write_timestamp<C: Into<RegionCoord>, O: Into<Timestamp>>(&mut self, coord: C, timestamp: O) -> Result<usize,McError> {
+	pub fn write_timestamp_at_coord<C: Into<RegionCoord>, O: Into<Timestamp>>(&mut self, coord: C, timestamp: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
 		let oldpos = self.writer.seek_return()?;
 		self.writer.seek(coord.timestamp_table_offset())?;
@@ -758,6 +762,17 @@ impl<W: Write + Seek> RegionWriter<W> {
 		result
 	}
 
+	pub fn write_data_at_coord<T: Writable,C: Into<RegionCoord>>(
+		&mut self,
+		compression_level: u32,
+		coord: C,
+		data: &T,
+	) -> Result<RegionSector, McError> {
+		let sector = self.write_data_to_sector(compression_level, data)?;
+		self.write_offset_at_coord(coord, sector)?;
+		Ok(sector)
+	}
+
 	//	TODO: Replace compression_level argument with custom type for fine tuning.
 	/// Write a chunk to the region file starting at the current
 	/// position in the file. After writing the chunk, pad bytes will 
@@ -765,7 +780,11 @@ impl<W: Write + Seek> RegionWriter<W> {
 	/// bytes.
 	/// This function does not write anything to the header. 
 	/// Returns the RegionSector that was written to.
-	pub fn write_data_to_sector<T: Writable>(&mut self, compression_level: u32, data: &T) -> Result<RegionSector,McError> {
+	pub fn write_data_to_sector<T: Writable>(
+		&mut self,
+		compression_level: u32,
+		data: &T
+	) -> Result<RegionSector,McError> {
 		/*	╭────────────────────────────────────────────────────────────────────────────────────────────────╮
 			│ Instead of using an in-memory buffer to do compression, I'll write                             │
 			│ directly to the writer. This should speed things up a bit, and reduce                          │
