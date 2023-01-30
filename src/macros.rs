@@ -68,6 +68,62 @@ macro_rules! for_each_int_type {
 	}
 }
 
+/// Continue a loop if a condition is met.
+/// ```rs
+/// let mut index = 0;
+/// loop {
+/// 	continue_if!((index & 1) == 0);
+/// 	println!("{}", index);
+/// 	index += 1;
+/// 	if index > 10 {
+/// 		break;
+/// 	}
+/// }
+/// ```
+/// Alternatively, you can also use a loop identifier:
+/// 'x: for x in 0..32 {
+/// 	'y: for y in 0..32 {
+/// 		continue_if!('y: (y & 1) == 1)
+/// 		continue_if!('x: y == 10);
+/// 	}
+/// }
+#[macro_export]	
+macro_rules! continue_if {
+	($var:lifetime: $condition:expr) => {
+		if $condition { continue $var; }
+	};
+	($condition:expr) => {
+		if $condition { continue; }
+	};
+}
+
+/// Break from a loop if a condition is met.
+/// ```rs
+/// let mut index = 0;
+/// loop {
+/// 	println!("{}", index);
+/// 	index += 1;
+/// 	break_if!(index >= 10);
+/// }
+/// ```
+/// Alternatively, you can also use a loop identifier:
+/// ```rs
+/// 'x: for x in 0..32 {
+/// 	'y: for y in 0..32 {
+/// 		break_if!('y: x + y > 40);
+/// 	}
+/// }
+/// ```
+#[macro_export]	
+macro_rules! break_if {
+	($var:lifetime: $condition:expr) => {
+		if $condition { break $var; }
+	};
+	($condition:expr) => {
+		if $condition { break; }
+	};
+}
+
 #[test]
 fn print_types() {
 	macro_rules! print_type {
