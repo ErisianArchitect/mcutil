@@ -616,6 +616,16 @@ impl RegionFileInfo {
 
 }
 
+impl RegionReader<BufReader<File>> {
+	pub fn open_with_capacity(
+		capacity: usize,
+		path: impl AsRef<Path>,
+	) -> McResult<RegionReader<BufReader<File>>> {
+		let file = File::open(path)?;
+		Ok(RegionReader::with_capacity(capacity, file))
+	}
+}
+
 impl<R: Read + Seek> RegionReader<R> {
 	pub fn new(reader: R) -> Self {
 		Self {
@@ -623,7 +633,15 @@ impl<R: Read + Seek> RegionReader<R> {
 		}
 	}
 
-	pub fn with_capacity<Or: Read + Seek>(capacity: usize, inner: Or) -> RegionReader<BufReader<Or>> {
+	// pub fn open_with_capacity(
+	// 	path: impl AsRef<Path>,
+	// 	capacity: usize,
+	// ) -> McResult<RegionReader<BufReader<File>>> {
+	// 	let file = File::open(path)?;
+	// 	Ok(RegionReader::with_capacity(capacity, file))
+	// }
+
+	pub fn with_capacity(capacity: usize, inner: R) -> RegionReader<BufReader<R>> {
 		let reader = BufReader::with_capacity(capacity, inner);
 		RegionReader {
 			reader
@@ -634,7 +652,7 @@ impl<R: Read + Seek> RegionReader<R> {
 	/// This function preserves the position in the stream that it starts at. That
 	/// means that it will seek to the header to read the offset, then it will return
 	/// to the position it started at when the function was called.
-	pub fn read_offset<C: Into<RegionCoord>>(&mut self, coord: C) -> Result<RegionSector, crate::McError> {
+	pub fn read_offset<C: Into<RegionCoord>>(&mut self, coord: C) -> McResult<RegionSector> {
 		let coord: RegionCoord = coord.into();
 		let return_offset = self.reader.seek_return()?;
 		self.reader.seek(coord.sector_table_offset())?;
@@ -644,7 +662,7 @@ impl<R: Read + Seek> RegionReader<R> {
 	}
 
 	/// Read entire [RegionSector] table from region file.
-	pub fn read_offset_table(&mut self) -> Result<Box<[RegionSector; 1024]>,McError> {
+	pub fn read_offset_table(&mut self) -> McResult<Box<[RegionSector; 1024]>> {
 		let mut table = Box::new([RegionSector(0); 1024]);
 		let original_position = self.reader.stream_position()?;
 		// Make sure that we aren't already at the beginning of the offset table.
@@ -974,7 +992,8 @@ impl<W: Write + Seek> RegionWriter<W> {
 /*	What should public functions be able to do?
 	- Verify a region file. (Create custom type to hold the region integrity information)
 		- Check that region file is multiple of 4KiB in size.
-		- Check that region file is at least 8KiB in size.
+		- Check that region 
+		file is at least 8KiB in size.
 		- Check that all sector offsets in the offset table are non-intersecting. (This may prove to be a bit difficult.)
 		- Check that all timestamps are less than current time.
 		- Check that all allocated sectors have valid NBT data.
@@ -1010,6 +1029,18 @@ impl<W: Write + Seek> RegionWriter<W> {
 	- Recompress file
 		rebuild a file with a new compression scheme, or none at all!
 */
+
+pub fn read_chunks<I: Into<RegionCoord>, It: Iterator<Item = I>, T: Readable>(region_file: impl AsRef<Path>,it: It) -> Result<Vec<(RegionCoord, Option<T>)>, McError> {
+	let file = File::open(region_file.as_ref())?;
+	let mut reader = RegionReader::with_capacity(4096, file);
+	let mut items = Vec::new();
+	it.map(I::into)
+		.try_for_each(|coord| {
+			items.push((coord, reader.read_data_at_coord(coord)?));
+			Result::<(),McError>::Ok(())
+		})?;
+	Ok(items)
+}
 
 /// This function will sequentially rebuild a region file.
 /// There likely isn't really a need for this, but it could
@@ -1086,10 +1117,30 @@ pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError>
 	Ok(true)
 }
 
+
+/// Counts how many chunks (out of 1024) exist in a Region file.
+pub fn count_chunks(region_file: impl AsRef<Path>) -> McResult<usize> {
+	let mut reader = RegionReader::open_with_capacity(4096, region_file)?;
+	
+	let table = SectorTable::read_from(&mut reader)?;
+
+	let mut count = 0;
+	
+	for sector in table.table.iter() {
+		continue_if!(sector.is_empty());
+		reader.seek(sector.seeker())?;
+		let length = u32::read_from(&mut reader)?;
+		continue_if!(length == 0);
+		count += 1;
+	}
+
+	Ok(count)
+}
+
 /// Counts how many sectors are wasted in the region file.
 /// This probably going to return 0, but if it ever does return
 /// something besides 0, please let me know. I'm curious.
-pub fn wasted_sectors(region: impl AsRef<Path>) -> Result<u32,McError> {
+pub fn wasted_sectors(region: impl AsRef<Path>) -> McResult<u32> {
 	let file = File::open(region.as_ref())?;
 	let mut reader = BufReader::with_capacity(4096, file);
 
@@ -1112,17 +1163,6 @@ pub fn wasted_sectors(region: impl AsRef<Path>) -> Result<u32,McError> {
 
 	Ok(waste_count)
 }
-
-// pub fn read_chunks<I: Into<RegionCoord>, It: Iterator<Item = I>, T: Readable>(region_file: impl AsRef<Path>,it: It) -> Result<Vec<(RegionCoord, Option<T>)>, McError> {
-// 	let file = File::open(region_file.as_ref())?;
-// 	let mut reader = RegionReader::with_capacity(4096, file);
-// 	let items = it.try_for_each(|coord| {
-// 		let coord: RegionCoord = coord.into();
-// 		let dat = reader.read_data_at_coord::<T,_>(coord)?;
-// 		Ok((coord, dat))
-// 	}).collect();
-// 	Ok(items)
-// }
 
 /// Extract all chunks in a region file into an output directory.
 pub fn extract_all_chunks<T: Writable + Readable>(
