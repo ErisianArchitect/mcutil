@@ -45,3 +45,5 @@ impl McError {
 		Err(McError::Custom(msg.as_ref().to_owned()))
 	}
 }
+
+pub type McResult<T> = Result<T,McError>;

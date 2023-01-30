@@ -9,3 +9,4 @@ pub mod macros;
 pub use flate2;
 
 pub use error::McError;
+pub use error::McResult;
