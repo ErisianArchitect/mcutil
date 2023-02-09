@@ -2,6 +2,7 @@
 
 #![allow(unused)]
 
+use core::time;
 use std::{
 	io::{
 		Read, Write,
@@ -17,6 +18,7 @@ use std::{
 	ops::*, arch::x86_64::_MM_FROUND_NO_EXC, fmt::{write, Debug},
 };
 
+use momo::momo;
 use chrono::prelude::*;
 use chumsky::primitive::todo;
 use flate2::{
@@ -140,7 +142,7 @@ pub enum CompressionScheme {
 // TODO: Move the following two implementations to the bottom of the file once you
 // decide whether or not you would like to keep it.
 impl Writable for CompressionScheme {
-	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+	fn write_to<W: Write>(&self, writer: &mut W) -> McResult<usize> {
 		match self {
 			CompressionScheme::GZip => writer.write_all(&[1u8])?,
 			CompressionScheme::ZLib => writer.write_all(&[2u8])?,
@@ -151,7 +153,7 @@ impl Writable for CompressionScheme {
 }
 
 impl Readable for CompressionScheme {
-	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+	fn read_from<R: Read>(reader: &mut R) -> McResult<Self> {
 		let mut buffer = [0u8;1];
 		reader.read_exact(&mut buffer)?;
 		match buffer[0] {
@@ -197,6 +199,12 @@ pub type SectorTable = RegionTable<RegionSector>;
 /// A table of 1024 [Timestamp] elements for each potential chunk in a
 /// 32x32 chunk region file.
 pub type TimestampTable = RegionTable<Timestamp>;
+
+#[derive(Debug, Clone, Default)]
+pub struct RegionHeader {
+	pub sectors: SectorTable,
+	pub timestamps: TimestampTable,
+}
 
 /// Info about a region file.
 /// This info includes:
@@ -390,6 +398,7 @@ impl Writable for RegionSector {
 }
 
 impl Seekable for RegionSector {
+	/// A [SeekFrom] that points to this [RegionSector]
 	fn seeker(&self) -> SeekFrom {
 		SeekFrom::Start(self.offset())
 	}
@@ -480,6 +489,12 @@ impl<T: RegionTableItem> RegionTable<T> {
 	}
 }
 
+impl<T: Default + Copy + RegionTableItem> Default for RegionTable<T> {
+	fn default() -> Self {
+		Self { table: Box::new([T::default(); 1024]) }
+	}
+}
+
 impl<C: Into<RegionCoord>,T: RegionTableItem> Index<C> for RegionTable<T> {
 	type Output = T;
 
@@ -513,6 +528,37 @@ impl<T: Writable + Debug + RegionTableItem + Sized> Writable for RegionTable<T> 
 			write_size += self.table[i].write_to(writer)?;
 		}
 		Ok(write_size)
+	}
+}
+
+impl<T: RegionTableItem> From<[T; 1024]> for RegionTable<T> {
+	fn from(value: [T; 1024]) -> Self {
+		Self {
+			table: Box::new(value)
+		}
+	}
+}
+
+impl<T: RegionTableItem> From<RegionTable<T>> for Box<[T; 1024]> {
+	fn from(value: RegionTable<T>) -> Self {
+		value.table
+	}
+}
+
+impl Readable for RegionHeader {
+	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
+		Ok(Self {
+			sectors: SectorTable::read_from(reader)?,
+			timestamps: TimestampTable::read_from(reader)?,
+		})
+	}
+}
+
+impl Writable for RegionHeader {
+	fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
+		Ok(
+			self.sectors.write_to(writer)? + self.timestamps.write_to(writer)?
+		)
 	}
 }
 
@@ -987,6 +1033,8 @@ impl<W: Write + Seek> RegionWriter<W> {
 	}
 }
 
+// HERE
+
 // ========[ PUBLIC FUNCTIONS  ]========================
 //	TODO: Public interface.
 /*	What should public functions be able to do?
@@ -1030,16 +1078,97 @@ impl<W: Write + Seek> RegionWriter<W> {
 		rebuild a file with a new compression scheme, or none at all!
 */
 
-pub fn read_chunks<I: Into<RegionCoord>, It: Iterator<Item = I>, T: Readable>(region_file: impl AsRef<Path>,it: It) -> Result<Vec<(RegionCoord, Option<T>)>, McError> {
+#[momo]
+pub fn create_empty_region_file(path: impl AsRef<Path>) -> McResult<u64> {
+	let file = File::create(path.as_ref())?;
+	let mut writer = BufWriter::with_capacity(4096, file);
+	Ok(writer.write_zeroes(1024*8)?)
+}
+
+pub fn read_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>, T: Readable>(
+	region_file: impl AsRef<Path>,
+	it: It
+) -> McResult<Vec<(RegionCoord, Option<T>)>> {
 	let file = File::open(region_file.as_ref())?;
 	let mut reader = RegionReader::with_capacity(4096, file);
 	let mut items = Vec::new();
-	it.map(I::into)
+	it.into_iter()
+		.map(I::into)
 		.try_for_each(|coord| {
 			items.push((coord, reader.read_data_at_coord(coord)?));
-			Result::<(),McError>::Ok(())
+			McResult::<()>::Ok(())
 		})?;
 	Ok(items)
+}
+
+/// Writes the given chunks to the region file at the given coordinates with the given timestamp.
+/// `compression_level` should be value from 0 to 9, where 0 is no compression and 9 is the best compression.
+/// `timestamp` is the timestamp you want written to the timestamp table for each new chunk.
+/// On success, the return value is the size of the file after writing.
+pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator<Item = (I, &'a T)>>(region_file: impl AsRef<Path>, compression_level: u32, timestamp: Timestamp, mut it: It) -> McResult<u64> {
+	/*	Write the given chunks to a region file, overwriting the chunks at the given coordinates.
+		First step is collect the chunks to be written into an array with 1024 elements.
+		This is easy to do using Option<T>. We can write all elements as None, then overwrite the ones from the iterator.
+	*/
+	// On the off chance that the region file has not been created, create one
+	let path = region_file.as_ref();
+	if !path.is_file() {
+		create_empty_region_file(path)?;
+	}
+	let mut chunks: [Option<&'a T>; 1024] = [None; 1024];
+	it.into_iter().try_for_each(|(index, item)| {
+		let coord: RegionCoord = index.into();
+		if chunks[coord.index()].is_some() {
+			return Err(McError::DuplicateChunk);
+		}
+		chunks[coord.index()] = Some(item);
+		Ok(())
+	})?;
+	// Now we can start building the region file.
+	let input_file = File::open(region_file.as_ref())?;
+	let output_file = tempfile::NamedTempFile::new()?;
+	let mut writer = RegionWriter::new(
+		BufWriter::with_capacity(4096, output_file)
+	);
+	let mut reader = RegionReader::new(
+		BufReader::with_capacity(4096, input_file)
+	);
+	// This header will be modifier as the region file is being rebuilt, then it will be written
+	// to the region file.
+	let mut header = RegionHeader::read_from(&mut reader)?;
+	// Write the blank header to the writer so that we can get the stream positioned to sector 2.
+	// We will later return to the beginning of the file to write the header.
+	writer.write_zeroes(1024*8)?;
+
+	// Now we will iterate from 0 to 1023 and write the correct sectors to the file.
+
+	for i in 0..1024 {
+		match chunks[i] {
+			// Write the new chunk to the new file.
+			Some(chunk) => { 
+				chunk.write_to(&mut writer)?;
+				header.sectors[i] = writer.write_data_to_sector(compression_level, chunk)?;
+				header.timestamps[i] = timestamp;
+
+			},
+			// Copy the old chunk from the old file.
+			None => {
+				let sector = header.sectors[i];
+				continue_if!(sector.is_empty());
+				reader.seek(sector.seeker())?;
+				header.sectors[i] = writer.copy_chunk_from(&mut reader)?;
+			},
+		}
+	}
+
+	// Seek to beginning of region file to write the header.
+	writer.seek(SeekFrom::Start(0))?;
+	header.write_to(&mut writer)?;
+	writer.flush()?;
+
+	let writer = writer.finish();
+	let tempfile_path = writer.get_ref().path();
+	Ok(std::fs::copy(tempfile_path, region_file)?)
 }
 
 /// This function will sequentially rebuild a region file.
@@ -1084,7 +1213,7 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 		for i in 0..1024 {
 			sectors[i].write_to(&mut writer.writer)?;
 		}
-		writer.flush();
+		writer.flush()?;
 		// Overwrite output file with tempfile.
 		let writer = writer.finish();
 		let tempfile_path = writer.get_ref().path();
@@ -1095,6 +1224,7 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 
 /// Checks that all present chunks in a region file are sequential.
 /// That is, it checks that chunks are written in a sequential order.
+#[momo]
 pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError> {
 	let file = File::open(region.as_ref())?;
 	let mut reader = BufReader::with_capacity(4096, file);
@@ -1140,6 +1270,7 @@ pub fn count_chunks(region_file: impl AsRef<Path>) -> McResult<usize> {
 /// Counts how many sectors are wasted in the region file.
 /// This probably going to return 0, but if it ever does return
 /// something besides 0, please let me know. I'm curious.
+#[momo]
 pub fn wasted_sectors(region: impl AsRef<Path>) -> McResult<u32> {
 	let file = File::open(region.as_ref())?;
 	let mut reader = BufReader::with_capacity(4096, file);
@@ -1207,6 +1338,7 @@ pub fn extract_all_chunks<T: Writable + Readable>(
 /// deserialization of the NBT tree, then the reserialization on the
 /// other side. This would be an uneccessary step, so we can cut it
 /// out by only copying the data itself.
+#[momo]
 pub fn buffered_extract_all_chunks(
 	region_file: impl AsRef<Path>,
 	output_directory: impl AsRef<Path>,
