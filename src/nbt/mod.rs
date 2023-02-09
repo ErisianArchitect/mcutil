@@ -12,6 +12,7 @@ pub mod tagpath;
 pub mod tagref;
 pub mod editable;
 pub mod verify;
+pub mod visit;
 
 // /// This is the Error type returned from NbtRead and NbtWrite operations that fail.
 // #[derive(thiserror::Error, Debug)]
