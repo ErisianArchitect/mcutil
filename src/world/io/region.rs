@@ -284,6 +284,7 @@ impl RegionCoord {
 
 macro_rules! __regioncoord_impl {
 	($type:ty) => {
+
 		impl From<($type, $type)> for RegionCoord {
 			fn from(value: ($type, $type)) -> Self {
 				Self::new(value.0 as u16, value.1 as u16)
@@ -311,6 +312,12 @@ macro_rules! __regioncoord_impl {
 }
 
 for_each_int_type!(__regioncoord_impl);
+
+impl<T: Into<RegionCoord> + Copy> From<&T> for RegionCoord {
+    fn from(value: &T) -> Self {
+		T::into(*value)
+    }
+}
 
 impl RegionSector {
 	pub fn new(offset: u32, size: u8) -> Self {
@@ -438,6 +445,12 @@ macro_rules! __timestamp_impls {
 }
 
 for_each_int_type!(__timestamp_impls);
+
+impl<T: Into<Timestamp> + Copy> From<&T> for Timestamp {
+    fn from(value: &T) -> Self {
+        T::into(*value)
+    }
+}
 
 impl Readable for Timestamp {
 	fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
@@ -1082,7 +1095,9 @@ impl<W: Write + Seek> RegionWriter<W> {
 pub fn create_empty_region_file(path: impl AsRef<Path>) -> McResult<u64> {
 	let file = File::create(path.as_ref())?;
 	let mut writer = BufWriter::with_capacity(4096, file);
-	Ok(writer.write_zeroes(1024*8)?)
+	let result = writer.write_zeroes(1024*8)?;
+	writer.flush()?;
+	Ok(result)
 }
 
 pub fn read_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>, T: Readable>(
@@ -1099,6 +1114,64 @@ pub fn read_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>, T: Readable
 			McResult::<()>::Ok(())
 		})?;
 	Ok(items)
+}
+
+/*
+I have designed a new way to edit a region file.
+
+*/
+
+// Deleting is less useful, so I don't want to make a generic
+// function that does both deleting and writing.
+/// Deletes chunks from the region file at the given coordinates.
+/// On success, returns the size of the region file after deletion.
+pub fn delete_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>>(region_file: impl AsRef<Path>, it: It) -> McResult<u64> {
+	
+	let mut delete: [bool; 1024] = [false; 1024];
+	it.into_iter().try_for_each(|coord| {
+		let coord: RegionCoord = coord.into();
+		delete[coord.index()] = true;
+		McResult::Ok(())
+	})?;
+	
+	// Now we can start building the region file.
+	let input_file = File::open(region_file.as_ref())?;
+	let output_file = tempfile::NamedTempFile::new()?;
+	let mut writer = RegionWriter::new(
+		BufWriter::with_capacity(4096, output_file)
+	);
+	let mut reader = RegionReader::new(
+		BufReader::with_capacity(4096, input_file)
+	);
+	// This header will be modified as the region file is being rebuilt, then it will be written
+	// to the region file.
+	let mut header = RegionHeader::read_from(&mut reader)?;
+	// Write the blank header to the writer so that we can get the stream positioned to sector 2.
+	// We will later return to the beginning of the file to write the header.
+	writer.write_zeroes(1024*8)?;
+
+	// Now we will iterate from 0 to 1023 and write the correct sectors to the file.
+
+	for i in 0..1024 {
+		if delete[i] {
+			header.sectors[i] = RegionSector::empty();
+			header.timestamps[i] = Timestamp(0);
+		} else {
+			let sector = header.sectors[i];
+			continue_if!(sector.is_empty());
+			reader.seek(sector.seeker())?;
+			header.sectors[i] = writer.copy_chunk_from(&mut reader)?;
+		}
+	}
+
+	// Seek to beginning of region file to write the header.
+	writer.seek(SeekFrom::Start(0))?;
+	header.write_to(&mut writer)?;
+	writer.flush()?;
+
+	let writer = writer.finish();
+	let tempfile_path = writer.get_ref().path();
+	Ok(std::fs::copy(tempfile_path, region_file)?)
 }
 
 /// Writes the given chunks to the region file at the given coordinates with the given timestamp.
@@ -1133,7 +1206,7 @@ pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator
 	let mut reader = RegionReader::new(
 		BufReader::with_capacity(4096, input_file)
 	);
-	// This header will be modifier as the region file is being rebuilt, then it will be written
+	// This header will be modified as the region file is being rebuilt, then it will be written
 	// to the region file.
 	let mut header = RegionHeader::read_from(&mut reader)?;
 	// Write the blank header to the writer so that we can get the stream positioned to sector 2.
@@ -1150,14 +1223,14 @@ pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator
 				header.sectors[i] = writer.write_data_to_sector(compression_level, chunk)?;
 				header.timestamps[i] = timestamp;
 
-			},
+			}
 			// Copy the old chunk from the old file.
 			None => {
 				let sector = header.sectors[i];
 				continue_if!(sector.is_empty());
 				reader.seek(sector.seeker())?;
 				header.sectors[i] = writer.copy_chunk_from(&mut reader)?;
-			},
+			}
 		}
 	}
 
@@ -1185,16 +1258,13 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 		let output_file = tempfile::NamedTempFile::new()?;
 		// To speed up writing the offset table to the file, I can store
 		// the table in memory while the new region file is being built.
-		let mut sectors = [RegionSector::empty(); 1024];
 		let mut writer = RegionWriter::new(
 			BufWriter::with_capacity(4096, output_file)
 		);
 		let mut reader = RegionReader::new(
 			BufReader::with_capacity(4096, input_file)
 		);
-		for i in 0..1024 {
-			sectors[i] = RegionSector::read_from(&mut reader)?;
-		}
+		let mut sectors = SectorTable::read_from(&mut reader)?;
 		// Write blank sector offset table.
 		writer.write_zeroes(4096)?;
 
@@ -1203,16 +1273,13 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 
 		// Write sectors from reader
 		for i in 0..1024 {
-			if sectors[i].is_empty() {
-				continue;
-			}
+			continue_if!(sectors[i].is_empty());
 			reader.seek(sectors[i].seeker())?;
 			sectors[i] = writer.copy_chunk_from(&mut reader)?;
 		}
+
 		writer.writer.seek(SeekFrom::Start(0))?;
-		for i in 0..1024 {
-			sectors[i].write_to(&mut writer.writer)?;
-		}
+		sectors.write_to(&mut writer)?;
 		writer.flush()?;
 		// Overwrite output file with tempfile.
 		let writer = writer.finish();
@@ -1397,6 +1464,10 @@ fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, Mc
 		Err(other) => Err(other),
 	}
 }
+
+// I need a function that collects region coordinates
+// into some sort of bitmask that tells me what region coordinates
+// are present.
 
 #[cfg(test)]
 mod tests {
