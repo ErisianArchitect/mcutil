@@ -7,7 +7,7 @@ use crate::nbt::*;
 use crate::nbt::io::*;
 use crate::nbt::tag::*;
 
-use crate::world::region::*;
+use crate::world::io::region::*;
 
 pub struct BlockStateProperty {
 	name: String,

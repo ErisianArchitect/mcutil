@@ -15,21 +15,28 @@ use std::{
 	path::{
 		Path, PathBuf,
 	},
-	ops::*, arch::x86_64::_MM_FROUND_NO_EXC, fmt::{write, Debug},
+	ops::*, fmt::{write, Debug},
 };
 
 use momo::momo;
 use chrono::prelude::*;
-use chumsky::primitive::todo;
 use flate2::{
 	read::GzDecoder,
 	read::ZlibDecoder,
 	write::ZlibEncoder,
-	Compression,
-	Compress
 };
 
-use crate::{*, world::chunk};
+pub use flate2::Compression;
+
+use crate::{
+	continue_if, break_if,
+	McResult, McError,
+	world::chunk,
+	nbt::{
+		io::NbtWrite,
+		io::NbtRead,
+	},
+};
 use crate::{ioext::*, math::bit::SetBit};
 use crate::world::io::*;
 use crate::for_each_int_type;
@@ -111,23 +118,6 @@ pub trait RegionTableItem {
 
 // ========[ STRUCTS AND ENUMS ]========================
 
-// TODO: Utilize CompresssionLevel and CompressionScheme as arguments to
-//		 functions that perform compression.
-#[repr(u8)]
-pub enum CompressionLevel {
-	/// Level of 0, uncompressed.
-	None = 0,
-	/// Level of 1, fastest compression.
-	Fastest = 1,
-	/// Level of 5.
-	Balanced = 5,
-	/// Level of 9, which is the best compression but takes the longest time.
-	Best = 9,
-	/// In case you really want a different compression level.
-	/// Must be value between 0 and 9.
-	Precise(u8),
-}
-
 /// Compression scheme used for writing or reading.
 #[repr(u8)]
 pub enum CompressionScheme {
@@ -137,32 +127,6 @@ pub enum CompressionScheme {
 	ZLib = 2,
 	/// Data is uncompressed.
 	Uncompressed = 3,
-}
-
-// TODO: Move the following two implementations to the bottom of the file once you
-// decide whether or not you would like to keep it.
-impl Writable for CompressionScheme {
-	fn write_to<W: Write>(&self, writer: &mut W) -> McResult<usize> {
-		match self {
-			CompressionScheme::GZip => writer.write_all(&[1u8])?,
-			CompressionScheme::ZLib => writer.write_all(&[2u8])?,
-			CompressionScheme::Uncompressed => writer.write_all(&[3u8])?,
-		}
-		Ok(1)
-	}
-}
-
-impl Readable for CompressionScheme {
-	fn read_from<R: Read>(reader: &mut R) -> McResult<Self> {
-		let mut buffer = [0u8;1];
-		reader.read_exact(&mut buffer)?;
-		match buffer[0] {
-			1 => Ok(Self::GZip),
-			2 => Ok(Self::ZLib),
-			3 => Ok(Self::Uncompressed),
-			unexpected => Err(McError::InvalidCompressionScheme(unexpected)),
-		}
-	}
 }
 
 /// A region file contains up to 1024 chunks, which is 32x32 chunks.
@@ -215,8 +179,7 @@ pub struct RegionHeader {
 pub struct RegionFileInfo {
 	pub(crate) path: PathBuf,
 	pub(crate) metadata: std::fs::Metadata,
-	pub sectors: SectorTable,
-	pub timestamps: TimestampTable,
+	pub(crate) header: RegionHeader,
 	pub(crate) present_bits: Box<[u64; 16]>,
 }
 
@@ -239,6 +202,33 @@ pub struct RegionWriter<W: Write + Seek> {
 }
 
 // ========[ Implementations   ]========================
+
+
+// TODO: Move the following two implementations to the bottom of the file once you
+// decide whether or not you would like to keep it.
+impl Writable for CompressionScheme {
+	fn write_to<W: Write>(&self, writer: &mut W) -> McResult<usize> {
+		match self {
+			CompressionScheme::GZip => writer.write_all(&[1u8])?,
+			CompressionScheme::ZLib => writer.write_all(&[2u8])?,
+			CompressionScheme::Uncompressed => writer.write_all(&[3u8])?,
+		}
+		Ok(1)
+	}
+}
+
+impl Readable for CompressionScheme {
+	fn read_from<R: Read>(reader: &mut R) -> McResult<Self> {
+		let mut buffer = [0u8;1];
+		reader.read_exact(&mut buffer)?;
+		match buffer[0] {
+			1 => Ok(Self::GZip),
+			2 => Ok(Self::ZLib),
+			3 => Ok(Self::Uncompressed),
+			unexpected => Err(McError::InvalidCompressionScheme(unexpected)),
+		}
+	}
+}
 
 impl RegionCoord {
 	/// Create a new RegionCoord.
@@ -497,7 +487,7 @@ impl<T: RegionTableItem> RegionTable<T> {
 		Self::OFFSET
 	}
 
-	pub fn seeker() -> SeekFrom {
+	pub const fn seeker() -> SeekFrom {
 		SeekFrom::Start(Self::OFFSET)
 	}
 }
@@ -583,16 +573,13 @@ impl RegionFileInfo {
 		let file = File::open(path.as_ref())?;
 		let metadata = std::fs::metadata(path.as_ref())?;
 		let mut reader = BufReader::with_capacity(4096, file);
-
-		let sector_table = SectorTable::read_from(&mut reader)?;
-		let timestamp_table = TimestampTable::read_from(&mut reader)?;
-
+		let header = RegionHeader::read_from(&mut reader)?;
 		let mut bits: Box<[u64; 16]> = Box::new([0; 16]);
 		let mut buffer = [0u8; 4];
 		let counter = 0;
 		for i in 0..1024 {
-			if !sector_table.table[i].is_empty() {
-				reader.seek(sector_table.table[i].seeker())?;
+			if !header.sectors.table[i].is_empty() {
+				reader.seek(header.sectors.table[i].seeker())?;
 				reader.read_exact(&mut buffer)?;
 				let length = u32::from_be_bytes(buffer);
 				if length != 0 {
@@ -604,8 +591,7 @@ impl RegionFileInfo {
 		Ok(Self {
 			path: PathBuf::from(path.as_ref()),
 			metadata,
-			sectors: sector_table,
-			timestamps: timestamp_table,
+			header,
 			present_bits: bits,
 		})
 	}
@@ -627,12 +613,12 @@ impl RegionFileInfo {
 
 	/// Get a RegionSector for the provided coordinate.
 	pub fn get_offset<C: Into<RegionCoord>>(&self, coord: C) -> RegionSector {
-		self.sectors[coord]
+		self.header.sectors[coord]
 	}
 
 	/// Get the Timestamp for the provided coordinate.
 	pub fn get_timestamp<C: Into<RegionCoord>>(&self, coord: C) -> Timestamp {
-		self.timestamps[coord]
+		self.header.timestamps[coord]
 	}
 
 	/// Checks if the chunk exists in the region file.
@@ -778,6 +764,51 @@ impl<R: Read + Seek> RegionReader<R> {
 		Ok(self.reader.seek(sector.seeker())?)
 	}
 
+	pub fn copy_data_at_coord<W: Write, C: Into<RegionCoord>>(&mut self, coord: C, writer: &mut W) -> McResult<u64> {
+		let offset = self.read_offset(coord)?;
+		if offset.is_empty() {
+			return Ok(0);
+		}
+		self.reader.seek(offset.seeker())?;
+		self.copy_data_from_sector(writer)
+	}
+
+	/// Copies data from the current sector in the region file.
+	/// If the data is not found, it will not copy anything.
+	/// This function does not move the stream before reading. It starts reading from wherever it is in the stream.
+	pub fn copy_data_from_sector<W: Write>(&mut self, writer: &mut W) -> McResult<u64> {
+		fn copy_from_region_sectors<R: Read, W: Write>(reader: &mut R, writer: &mut W) -> McResult<u64> {
+			let mut buffer = [0u8; 4];
+			// Read the length of the chunk.
+			reader.read_exact(&mut buffer)?;
+			let length = u32::from_be_bytes(buffer) as u64;
+			if length == 0 {
+				return Ok(0);
+			}
+			// Read compression scheme
+			reader.read_exact(&mut buffer[..1])?;
+			let compression_scheme = buffer[0];
+			Ok(match compression_scheme {
+				// GZip
+				1 => {
+					let mut dec = GzDecoder::new(reader.take(length - 1)); // Subtract 1 from length for compression scheme.
+					std::io::copy(&mut dec, writer)?
+				}
+				// ZLib
+				2 => {
+					let mut dec = ZlibDecoder::new(reader.take(length - 1)); // Subtract 1 from length for compression scheme.
+					std::io::copy(&mut dec, writer)?
+				}
+				// Uncompressed (since a version before 1.15.1)
+				3 => {
+					std::io::copy(&mut reader.take(length - 1), writer)?
+				}
+				invalid_scheme => return Err(McError::InvalidCompressionScheme(invalid_scheme)),
+			})
+		}
+		copy_from_region_sectors(&mut self.reader, writer)
+	}
+
 	/// Read data from the region file at the specified coordinate.
 	/// Will return None if the data does not exist in the file rather than returning an error.
 	pub fn read_data_at_coord<T: Readable, C: Into<RegionCoord>>(&mut self, coord: C) -> Result<Option<T>,McError> {
@@ -803,7 +834,7 @@ impl<R: Read + Seek> RegionReader<R> {
 		/// 
 		/// If the chunk is not present in the file (a length of zero was read)
 		/// then None is returned.
-		fn read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> Result<Option<T>,McError> {
+		fn read_from_region_sectors<R: Read,T: Readable>(reader: &mut R) -> McResult<Option<T>> {
 			let mut buffer = [0u8; 4];
 			// Read the length of the chunk.
 			reader.read_exact(&mut buffer)?;
@@ -843,29 +874,29 @@ impl<R: Read + Seek> RegionReader<R> {
 }
 
 impl<R: Read + Seek> Read for RegionReader<R> {
-	fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+	fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
 		self.reader.read(buf)
 	}
 }
 
 impl<W: Write + Seek> Write for RegionWriter<W> {
-	fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+	fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
 		self.writer.write(buf)
 	}
 
-	fn flush(&mut self) -> io::Result<()> {
+	fn flush(&mut self) -> std::io::Result<()> {
 		self.writer.flush()
 	}
 }
 
 impl<R: Read + Seek> Seek for RegionReader<R> {
-	fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+	fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
 		self.reader.seek(pos)
 	}
 }
 
 impl<W: Write + Seek> Seek for RegionWriter<W> {
-	fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+	fn seek(&mut self, pos: SeekFrom) -> std::io::Result<u64> {
 		self.writer.seek(pos)
 	}
 }
@@ -892,6 +923,33 @@ impl<W: Write + Seek> RegionWriter<W> {
 		Ok(self.writer.write_zeroes(4096*2)?)
 	}
 
+	/// Seeks to the beginning of the stream and writes a header.
+	pub fn write_header(&mut self, header: RegionHeader) -> McResult<()> {
+		let ret = self.writer.seek_return()?;
+		self.seek(SeekFrom::Start(0))?;
+		header.write_to(&mut self.writer)?;
+		self.writer.seek(ret)?;
+		Ok(())
+	}
+
+	/// Seeks to the table and writes it to the file.
+	pub fn write_sector_table(&mut self, table: SectorTable) -> McResult<()> {
+		let ret = self.writer.seek_return()?;
+		self.seek(SectorTable::seeker())?;
+		table.write_to(&mut self.writer)?;
+		self.writer.seek(ret)?;
+		Ok(())
+	}
+
+	/// Seeks to the table and writes it to the file.
+	pub fn write_timestamp_table(&mut self, table: TimestampTable) -> McResult<()> {
+		let ret = self.writer.seek_return()?;
+		self.seek(TimestampTable::seeker())?;
+		table.write_to(&mut self.writer)?;
+		self.writer.seek(ret)?;
+		Ok(())
+	}
+
 	/// Write an offset to the offset table of the Region file.
 	pub fn write_offset_at_coord<C: Into<RegionCoord>,O: Into<RegionSector>>(&mut self, coord: C, offset: O) -> Result<usize,McError> {
 		let coord: RegionCoord = coord.into();
@@ -916,13 +974,17 @@ impl<W: Write + Seek> RegionWriter<W> {
 		result
 	}
 
+	/// Write data to Region File, then write the sector that data
+	/// was written to into the sector table.
+	/// `compression_level` must be a value from 0 to 9, where 0 means
+	/// "no compression" and 9 means "take as along as you like" (best compression)
 	pub fn write_data_at_coord<T: Writable,C: Into<RegionCoord>>(
 		&mut self,
-		compression_level: u32,
+		compression: Compression,
 		coord: C,
 		data: &T,
 	) -> Result<RegionSector, McError> {
-		let sector = self.write_data_to_sector(compression_level, data)?;
+		let sector = self.write_data_to_sector(compression, data)?;
 		self.write_offset_at_coord(coord, sector)?;
 		Ok(sector)
 	}
@@ -936,9 +998,9 @@ impl<W: Write + Seek> RegionWriter<W> {
 	/// Returns the RegionSector that was written to.
 	pub fn write_data_to_sector<T: Writable>(
 		&mut self,
-		compression_level: u32,
+		compression: Compression,
 		data: &T
-	) -> Result<RegionSector,McError> {
+	) -> McResult<RegionSector> {
 		/*	╭────────────────────────────────────────────────────────────────────────────────────────────────╮
 			│ Instead of using an in-memory buffer to do compression, I'll write                             │
 			│ directly to the writer. This should speed things up a bit, and reduce                          │
@@ -973,7 +1035,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 		// Step 05.)
 		let mut compressor = ZlibEncoder::new(
 			&mut self.writer,
-			Compression::new(compression_level.min(9))
+			compression
 		);
 		// Step 06.)
 		data.write_to(&mut compressor)?;
@@ -1117,16 +1179,37 @@ pub fn read_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>, T: Readable
 }
 
 /*
-I have designed a new way to edit a region file.
+I have an idea for an algorithm for rebuilding a region file.
+Since a region file may be missing chunks, I can iterate over
+those. But I also need to account for the edits. So how do I
+do that? By zipping the two sets together, and iterating
+through all chunks that would be written, set the appropriate
+sector values for the sector table, write timestamps if necessary.
 
+If both the available chunks and the edits are sorted, then
+it makes it very simple to zip them.
+
+So the basic idea is that you would have two collections of
+coordinates/indices.
 */
+
+enum RegionEditAction<T: Writable> {
+	/// For deleting chunks if they exist. 
+	Delete,
+	/// For writing data.
+	Write(T),
+}
 
 // Deleting is less useful, so I don't want to make a generic
 // function that does both deleting and writing.
 /// Deletes chunks from the region file at the given coordinates.
 /// On success, returns the size of the region file after deletion.
-pub fn delete_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>>(region_file: impl AsRef<Path>, it: It) -> McResult<u64> {
-	
+pub fn delete_chunks<P, I, It>(region_file: P, it: It) -> McResult<u64>
+where
+	P: AsRef<Path>,
+	I: Into<RegionCoord>,
+	It: IntoIterator<Item = I> {
+		
 	let mut delete: [bool; 1024] = [false; 1024];
 	it.into_iter().try_for_each(|coord| {
 		let coord: RegionCoord = coord.into();
@@ -1178,7 +1261,12 @@ pub fn delete_chunks<I: Into<RegionCoord>, It: IntoIterator<Item = I>>(region_fi
 /// `compression_level` should be value from 0 to 9, where 0 is no compression and 9 is the best compression.
 /// `timestamp` is the timestamp you want written to the timestamp table for each new chunk.
 /// On success, the return value is the size of the file after writing.
-pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator<Item = (I, &'a T)>>(region_file: impl AsRef<Path>, compression_level: u32, timestamp: Timestamp, mut it: It) -> McResult<u64> {
+pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator<Item = (I, &'a T)>>(
+	region_file: impl AsRef<Path>,
+	compression: Compression,
+	timestamp: Timestamp,
+	it: It
+) -> McResult<u64> {
 	/*	Write the given chunks to a region file, overwriting the chunks at the given coordinates.
 		First step is collect the chunks to be written into an array with 1024 elements.
 		This is easy to do using Option<T>. We can write all elements as None, then overwrite the ones from the iterator.
@@ -1220,7 +1308,7 @@ pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator
 			// Write the new chunk to the new file.
 			Some(chunk) => { 
 				chunk.write_to(&mut writer)?;
-				header.sectors[i] = writer.write_data_to_sector(compression_level, chunk)?;
+				header.sectors[i] = writer.write_data_to_sector(compression, chunk)?;
 				header.timestamps[i] = timestamp;
 
 			}
@@ -1243,6 +1331,17 @@ pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator
 	let tempfile_path = writer.get_ref().path();
 	Ok(std::fs::copy(tempfile_path, region_file)?)
 }
+
+// /// The generalized approach to modifying a Region File.
+// fn edit_chunks<P,C,F,It>(region_file: P, it: It) -> McResult<u64>
+// where
+// 	P: AsRef<Path>,
+// 	C: Into<RegionCoord>,
+// 	F: FnMut(RegionCoord, )
+// 	It: IntoIterator<Item = C> {
+	
+// 	todo!()
+// }
 
 /// This function will sequentially rebuild a region file.
 /// There likely isn't really a need for this, but it could
@@ -1293,10 +1392,12 @@ pub fn rebuild_region_file<P1: AsRef<Path>, P2: AsRef<Path>>(input: P1, output: 
 /// That is, it checks that chunks are written in a sequential order.
 #[momo]
 pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError> {
-	let file = File::open(region.as_ref())?;
-	let mut reader = BufReader::with_capacity(4096, file);
-
-	let table = SectorTable::read_from(&mut reader)?;
+	
+	let table = {
+		let file = File::open(region.as_ref())?;
+		let mut reader = BufReader::with_capacity(4096, file);
+		SectorTable::read_from(&mut reader)?
+	};
 
 	let mut last = table[0];
 	for i in 1..1024 {
@@ -1316,7 +1417,10 @@ pub fn chunks_are_sequential<P: AsRef<Path>>(region: P) -> Result<bool, McError>
 
 
 /// Counts how many chunks (out of 1024) exist in a Region file.
-pub fn count_chunks(region_file: impl AsRef<Path>) -> McResult<usize> {
+#[momo]
+pub fn count_chunks(
+	region_file: impl AsRef<Path>
+) -> McResult<usize> {
 	let mut reader = RegionReader::open_with_capacity(4096, region_file)?;
 	
 	let table = SectorTable::read_from(&mut reader)?;
@@ -1362,11 +1466,17 @@ pub fn wasted_sectors(region: impl AsRef<Path>) -> McResult<u32> {
 	Ok(waste_count)
 }
 
-/// Extract all chunks in a region file into an output directory.
-pub fn extract_all_chunks<T: Writable + Readable>(
+// TODO:	Perhaps make it possible to provide a file name formatter
+//			to control how the chunk names are formatted.
+/// Extracts all chunks present in a region file and writes them to an
+/// output directory.
+/// Note: All chunk names have the following format: `chunk.{x}.{z}.nbt`
+/// where `x` and `z` are coordinates relative to the region origin.
+#[momo]
+pub fn extract_all_chunks(
 	region_file: impl AsRef<Path>,
 	output_directory: impl AsRef<Path>,
-) -> Result<(),McError> {
+) -> McResult<()> {
 	// Iterate through all that are present in Region File, then deposit
 	// them into the provided output_directory with 
 	// the format: chunk.{x}.{z}.nbt.
@@ -1377,7 +1487,6 @@ pub fn extract_all_chunks<T: Writable + Readable>(
 	let mut reader = RegionReader::new(
 		BufReader::with_capacity(4096, region_file)
 	);
-
 	// Load the sector table into memory so we don't need to needlessly
 	// seek around the file gathering sector data from the table.
 	let sectors = SectorTable::read_from(&mut reader)?;
@@ -1386,52 +1495,14 @@ pub fn extract_all_chunks<T: Writable + Readable>(
 		if sectors.table[i].is_empty() {
 			continue;
 		}
-		reader.reader.seek(sectors.table[i].seeker())?;
-		let Some(chunk) = reader.read_data_from_sector::<T>()? else { continue; };
 		let coord = RegionCoord::from(i);
 		let out_path = output_directory.as_ref().join(format!("chunk.{}.{}.nbt", coord.x(), coord.z()));
 		let chunk_file = File::create(out_path)?;
 		let mut writer = BufWriter::with_capacity(4096, chunk_file);
-
-		chunk.write_to(&mut writer)?;
-		
+		reader.reader.seek(sectors.table[i].seeker())?;
+		reader.copy_data_from_sector(&mut writer)?;
 	}
 	Ok(())
-}
-
-/// Since [extract_all_chunks] requires a type to be provided that is
-/// readable and writable, one may be tempted to provide the function
-/// with the [crate::nbt::tag::NamedTag] type, which would cause the
-/// deserialization of the NBT tree, then the reserialization on the
-/// other side. This would be an uneccessary step, so we can cut it
-/// out by only copying the data itself.
-#[momo]
-pub fn buffered_extract_all_chunks(
-	region_file: impl AsRef<Path>,
-	output_directory: impl AsRef<Path>,
-) -> Result<(),McError> {
-	/// A special type created specifically for the purpose of holding a
-	/// temporary buffer containing the chunk data.
-	/// This data is normally NBT data, but we don't need to deserialize
-	/// the NBT tree only to the then reserialize that same NBT tree.
-	struct ChunkBuffer(Box<[u8]>);
-
-	impl Readable for ChunkBuffer {
-		fn read_from<R: Read>(reader: &mut R) -> Result<Self,crate::McError> {
-			let mut buffer = Vec::with_capacity(4096);
-			reader.read_to_end(&mut buffer)?;
-			Ok(Self(buffer.into_boxed_slice()))
-		}
-	}
-
-	impl Writable for ChunkBuffer {
-		fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
-			writer.write_all(self.0.as_ref())?;
-			Ok(self.0.len())
-		}
-	}
-
-	extract_all_chunks::<ChunkBuffer>(region_file, output_directory)
 }
 
 // ========[ PRIVATE FUNCTIONS ]========================
@@ -1455,15 +1526,16 @@ const fn _pad_size(size: u64) -> u64 {
 	(4096 - (size & 4095)) & 4095
 }
 
-/// Takes a [Result<T,McError>] and transforms it into a [Result<Option<T>,McError>]
-/// where a value of [Err(McError::ChunkNotFound)] is transformed into [Ok(None)].
-fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, McError> {
-	match result {
-		Ok(ok) => Ok(Some(ok)),
-		Err(McError::ChunkNotFound) => Ok(None),
-		Err(other) => Err(other),
-	}
-}
+// I don't think I need this, but I'm going to keep the code just in case.
+// /// Takes a [Result<T,McError>] and transforms it into a [Result<Option<T>,McError>]
+// /// where a value of [Err(McError::ChunkNotFound)] is transformed into [Ok(None)].
+// fn _filter_chunk_not_found<T>(result: Result<T,McError>) -> Result<Option<T>, McError> {
+// 	match result {
+// 		Ok(ok) => Ok(Some(ok)),
+// 		Err(McError::ChunkNotFound) => Ok(None),
+// 		Err(other) => Err(other),
+// 	}
+// }
 
 // I need a function that collects region coordinates
 // into some sort of bitmask that tells me what region coordinates
@@ -1476,7 +1548,7 @@ mod tests {
 	#[test]
 	fn region_file_info_test() -> Result<(),McError> {
 		let info = RegionFileInfo::load("r.0.0.mca")?;
-		let sect = info.sectors[(1,3)];
+		let sect = info.header.sectors[(1,3)];
 		Ok(())
 	}
 
