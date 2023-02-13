@@ -124,6 +124,41 @@ macro_rules! break_if {
 	};
 }
 
+/// Return from a function if a condition is met.
+/// ```rs
+/// let mut index = 0;
+/// loop {
+/// 	println!("{}", index);
+/// 	index += 1;
+/// 	return_if!(index >= 10);
+/// }
+/// ```
+/// Alternatively, you can also provide an expression to be returned:
+/// ```rs
+/// // return_if!(expr; condition)
+/// fn sample() -> (i32, i32) {
+/// 	for x in 0..32 {
+/// 		for y in 0..32 {
+/// 			return_if!((x,y); x + y == 40);
+/// 		}
+/// 	}
+/// 	(0, 0)
+/// }
+/// ```
+#[macro_export]
+macro_rules! return_if {
+	($result:expr; $condition:expr) => {
+		if $condition {
+			return $result;
+		}
+	};
+	($condition:expr) => {
+		if $condition {
+			return;
+		}
+	};
+}
+
 #[test]
 fn print_types() {
 	macro_rules! print_type {
