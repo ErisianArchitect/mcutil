@@ -7,6 +7,8 @@ use crate::{
 	McResult,
 };
 
+pub const BUFFERSIZE: usize = 4096;
+
 /// For types that can be written to a writer.
 pub trait Writable {
 	fn write_to<W: Write>(&self, writer: &mut W) -> McResult<usize>;
