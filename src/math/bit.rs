@@ -40,8 +40,8 @@ macro_rules! __get_set_impl {
 				}
 				result
 			}
-
 		}
+
 	};
 }
 
