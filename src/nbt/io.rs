@@ -515,6 +515,20 @@ impl NbtSize for NamedTag {
 	}
 }
 
+impl<T> NbtWrite for &T
+where T: NbtWrite {
+    fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
+        self.write_to(writer)
+    }
+}
+
+impl<T> NbtRead for &T
+where T: NbtRead {
+    fn nbt_read<R: Read>(reader: &mut R) -> Result<Self, McError> {
+        Self::read_from(reader)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 	use crate::nbt::*;
