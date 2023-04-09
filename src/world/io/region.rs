@@ -36,6 +36,10 @@ use crate::{
 	nbt::{
 		io::NbtWrite,
 		io::NbtRead,
+		tag::{
+			Tag,
+			NamedTag,
+		},
 	},
 	math::bit::GetBit,
 };
@@ -1420,11 +1424,14 @@ where
 }
 
 // TODO: Move the RegionBuilder stuff to the appropriate places in the file. Organization is key!
+/// A helper for creating or updating region files.
 pub struct RegionRebuilder {
 	origin: PathBuf,
 	header: RegionHeader,
 	writer: RegionWriter<BufWriter<tempfile::NamedTempFile>>,
 	reader: RegionReader<BufReader<File>>,
+	compression: Option<Compression>,
+	timestamp: Option<Timestamp>,
 }
 
 pub enum BuildAction<T: Writable> {
@@ -1437,18 +1444,32 @@ pub enum BuildAction<T: Writable> {
 impl RegionRebuilder {
 	/// Creates a new region builder based on the pre-existing region file.
 	pub fn load(region_file: impl AsRef<Path>) -> McResult<Self> {
-		let origin = region_file.as_ref().to_owned();
+		let file_origin = region_file.as_ref().to_owned();
 		let mut reader = RegionReader::open_with_capacity(BUFFERSIZE, region_file.as_ref())?;
 		let mut writer = RegionWriter::with_capacity(BUFFERSIZE, tempfile::NamedTempFile::new()?);
 		let header = RegionHeader::read_from(&mut reader)?;
 		Ok(
 			Self {
-				origin,
+				origin: file_origin,
 				header,
 				writer,
 				reader,
+				compression: None,
+				timestamp: None,
 			}
 		)
+	}
+
+	/// Set the compression value.
+	pub fn compression(mut self, value: Compression) -> Self {
+		self.compression = Some(value);
+		self
+	}
+
+	/// Set the default timestamp value.
+	pub fn timestamp(mut self, value: Timestamp) -> Self {
+		self.timestamp = Some(value);
+		self
 	}
 
 	/// Creates a new region builder that also creates a new region file.
@@ -1461,19 +1482,18 @@ impl RegionRebuilder {
 	/// `default_timestamp` is the default timestamp to write to the timestamp table.
 	/// If you are writing data to the file, the timestamp must be modified. If no timestamp
 	/// is provided by the user, `utc_now` is used.
-	pub fn rebuild<C,T,It,F>(
+	pub fn rebuild<C,T,F>(
+		// rebuild is only called once.
 		mut self,
-		compression: Compression,
-		default_timestamp: Option<Timestamp>,
-		callback: F,
+		mut callback: F,
 	) -> McResult<u64>
 	where
 		C: From<RegionCoord>,
 		T: Writable,
-		F: Fn(C) -> BuildAction<T> {
-		// The basic idea here is that the 
+		F: FnMut(C) -> BuildAction<T> {
 		let mut coord: RegionCoord = RegionCoord(0);
-		let default_timestamp = default_timestamp.unwrap_or(Timestamp::utc_now());
+		let compression = self.compression.unwrap_or(Compression::best());
+		let default_timestamp = self.timestamp.unwrap_or(Timestamp::utc_now());
 		(0..1024usize)
 			.try_for_each(|index| {
 				let coord = RegionCoord::from(index);
@@ -1507,7 +1527,7 @@ impl RegionRebuilder {
 	/// This function will also go to the beginning of the writer to write the header
 	/// so that you don't have to worry about rewriting it.
 	/// to the region file.
-	pub fn finish(mut self) -> McResult<u64> {
+	fn finish(mut self) -> McResult<u64> {
 		let mut writer = self.writer.finish();
 		writer.seek(SeekFrom::Start(0))?;
 		self.header.write_to(&mut writer)?;
@@ -1520,6 +1540,23 @@ impl RegionRebuilder {
 		BuildAction::Copy
 	}
 
+}
+// TODO: Remove this when you're done
+fn regionrebuilder_test() -> McResult<()>{
+	use crate::nbt::tag::NamedTag;
+	let mut chunk = NamedTag::new(Tag::string("Hello, world!"));
+	let target: (i32, i32) = (1, 1);
+	let bb = RegionRebuilder::create("test.mcr")?
+		.compression(Compression::none())
+		.timestamp(Timestamp::utc_now())
+		.rebuild(|index: (i32, i32)| {
+			if index == target {
+				BuildAction::Write(&chunk)
+			} else {
+				BuildAction::Copy
+			}
+		})?;
+		Ok(())
 }
 
 pub fn edit_region_file<T: Writable>(
