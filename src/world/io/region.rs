@@ -1430,14 +1430,22 @@ pub struct RegionRebuilder {
 	header: RegionHeader,
 	writer: RegionWriter<BufWriter<tempfile::NamedTempFile>>,
 	reader: RegionReader<BufReader<File>>,
+	/// This is the compression used during rebuilding. It will be used for all chunks
+	/// written to the file.
 	compression: Option<Compression>,
+	/// This is the default timestamp that will be written when to timestamp is provided.
+	/// If this value is not set, `utc_now` will be used.
 	timestamp: Option<Timestamp>,
 }
 
 pub enum BuildAction<T: Writable> {
+	/// Delete the chunk from the file.
 	Delete,
+	/// Copy the chunk from the old file to the new one.
 	Copy,
+	/// Write data to the region file.
 	Write(T),
+	/// Write data to the region file with a specific timestamp.
 	WriteTimestamped(T, Timestamp),
 }
 
@@ -1520,14 +1528,6 @@ impl RegionRebuilder {
 				}
 				McResult::Ok(())
 			})?;
-		self.finish()
-	}
-
-	/// When you are finished rebuilding, call this function to commit the changes.
-	/// This function will also go to the beginning of the writer to write the header
-	/// so that you don't have to worry about rewriting it.
-	/// to the region file.
-	fn finish(mut self) -> McResult<u64> {
 		let mut writer = self.writer.finish();
 		writer.seek(SeekFrom::Start(0))?;
 		self.header.write_to(&mut writer)?;
@@ -1535,12 +1535,8 @@ impl RegionRebuilder {
 		Ok(std::fs::copy(tempfile_path, self.origin)?)
 	}
 
-	// What the fuck is this?
-	fn __copy_callback<T: Writable>(coord: RegionCoord) -> BuildAction<T> {
-		BuildAction::Copy
-	}
-
 }
+
 // TODO: Remove this when you're done
 fn regionrebuilder_test() -> McResult<()>{
 	use crate::nbt::tag::NamedTag;
@@ -1634,7 +1630,6 @@ pub fn write_chunks<'a, I: Into<RegionCoord>, T: Writable + 'a, It: IntoIterator
 			Some(chunk) => { 
 				header.sectors[i] = writer.write_data_to_sector(compression, chunk)?;
 				header.timestamps[i] = timestamp;
-
 			}
 			// Copy the old chunk from the old file.
 			None => {
