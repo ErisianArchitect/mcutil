@@ -136,7 +136,7 @@ pub trait RegionTableItem {
 }
 
 pub trait ChunkBuilder {
-	fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionFileChunk) -> McResult<()>;
+	fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionBuilderChunk) -> McResult<()>;
 }
 
 pub trait RegionFile {
@@ -231,21 +231,23 @@ pub struct RegionWriter<W: Write + Seek> {
 	writer: W,
 }
 
-/// The struct that holds all the stuff that the RegionBuilder and RegionFileChunk
+/// The struct that holds all the stuff that the [RegionBuilder] and [RegionBuilderChunk]
 /// will use in order to rebuild a region file.
 pub(crate) struct RegionBuilderWorker {
 	pub header: RegionHeader,
 	pub writer: RegionWriter<BufWriter<tempfile::NamedTempFile>>,
 	pub reader: RegionReader<BufReader<File>>,
-	/// A marker for the RegionFileChunk to not copy
-	pub do_not_copy: bool,
+	/// A marker for the [RegionBuilderChunk] to tell the [RegionBuilder] to copy the chunk
+	/// at the current iteration in the Region Build loop. This will be set to `true`
+	/// before the [ChunkBuilder] is called.
+	pub copy_chunk: bool,
 }
 
-// My plan with RegionFileChunk is to have a structure that can dip down
+// My plan with RegionBuilderChunk is to have a structure that can dip down
 // into the callback provided to RegionBuilder so that the callback
-// can call functions on the RegionFileChunk to either delete or write
+// can call functions on the RegionBuilderChunk to either delete or write
 // new chunks.
-pub struct RegionFileChunk<'a> { 
+pub struct RegionBuilderChunk<'a> { 
 	worker: &'a mut RegionBuilderWorker,
 	pub(crate) timestamp: Timestamp,
 	pub(crate) compression: Compression,
@@ -1276,6 +1278,9 @@ impl<W: Write + Seek> RegionWriter<W> {
 	/// data over to the writer. If the length is zero, nothing is copied
 	/// and the value returned is an empty RegionSector.
 	pub fn copy_chunk_from<R: Read>(&mut self, reader: &mut R) -> McResult<RegionSector> {
+		if self.stream_position()? & 4095 != 0 {
+			return Err(McError::StreamSectorBoundaryError);
+		}
 		let sector_offset = self.sector_offset()?;
 		let mut length_buffer = [0u8; 4];
 		reader.read_exact(&mut length_buffer)?;
@@ -1313,7 +1318,7 @@ impl RegionBuilderWorker {
 
 }
 
-impl<'a> RegionFileChunk<'a> {
+impl<'a> RegionBuilderChunk<'a> {
 	pub(crate) fn new(
 		worker: &'a mut RegionBuilderWorker,
 		timestamp: Timestamp,
@@ -1332,7 +1337,7 @@ impl<'a> RegionFileChunk<'a> {
 	pub fn delete(self) {
 		self.worker.header.sectors[self.index] = RegionSector::empty();
 		self.worker.header.timestamps[self.index] = Timestamp(0);
-		self.worker.do_not_copy = true;
+		self.worker.copy_chunk = false;
 	}
 
 	/// Write the value to the region file as a chunk that
@@ -1349,7 +1354,7 @@ impl<'a> RegionFileChunk<'a> {
 	pub fn write_timestamped<T: Writable, C: Into<Timestamp>>(self, value: &T, timestamp: C) -> McResult<RegionSector> {
 		self.worker.header.sectors[self.index] = self.worker.writer.write_data_to_sector(self.compression, value)?;
 		self.worker.header.timestamps[self.index] = timestamp.into();
-		self.worker.do_not_copy = true;
+		self.worker.copy_chunk = false;
 		Ok(self.worker.header.sectors[self.index])
 	}
 }
@@ -1392,12 +1397,6 @@ impl RegionBuilder {
 		self
 	}
 
-	/// Creates a new region builder that also creates a new region file.
-	pub fn create(region_file: impl AsRef<Path>) -> McResult<Self> {
-		create_empty_region_file(region_file.as_ref())?;
-		RegionBuilder::open(region_file)
-	}
-
 	/// Rebuilds the region file, calling `callback` for each chunk.
 	/// `default_timestamp` is the default timestamp to write to the timestamp table.
 	/// If you are writing data to the file, the timestamp must be modified. If no timestamp
@@ -1407,44 +1406,46 @@ impl RegionBuilder {
 		mut self,
 		mut chunk_builder: T,
 	) -> McResult<u64> {
-		let compression = self.compression;
-		let default_timestamp = self.timestamp.unwrap_or(Timestamp::utc_now());
 		// There are 32x32 (1024) chunks stored in a region file.
 		// This loop will loop through each index for a chunk (in the header tables)
-		// It will then create a RegionCoord from that index and create a RegionFileChunk
+		// It will then create a RegionCoord from that index and create a RegionBuilderChunk
 		// which will be used to pass to the chunk_builder.
 		// This allows the rebuilding process to restrict chunk writing to a one-time usage
-		// If the build_chunk function doesn't do anything with
 		if !self.origin.is_file() {
-
+			create_empty_region_file(&self.origin)?;
 		}
+		let compression = self.compression;
+		let default_timestamp = self.timestamp.unwrap_or(Timestamp::utc_now());
 		let mut reader = RegionReader::open_with_capacity(BUFFERSIZE, &self.origin)?;
-		let header = RegionHeader::read_from(&mut reader)?;
+		let header = reader.read_value::<RegionHeader>()?;
 		let mut writer = RegionWriter::with_capacity(BUFFERSIZE, tempfile::NamedTempFile::new()?);
+		// Since this algorithm is rebuilding the region file, the first step is to write an empty header.
 		writer.write_empty_header()?;
+		// The worker will hold the header, writer, and reader for each iteration in the loop.
+		// The do_not_copy flag is used as a marker to tell the algorithm not to copy the chunk
+		// that might exist in the current region file.
 		let mut worker = RegionBuilderWorker {
 			header,
 			writer,
 			reader,
-			do_not_copy: false,
+			copy_chunk: true,
 		};
 		for index in 0..1024usize {
 			let coord = RegionCoord::from(index);
-			let copy = Rc::new(Cell::new(true));
-			let chunker = RegionFileChunk::new(
+			let chunk = RegionBuilderChunk::new(
 				&mut worker,
 				default_timestamp,
 				compression,
 				index,
 			);
-			chunk_builder.build_chunk(coord, chunker)?;
-			if !worker.do_not_copy {
+			chunk_builder.build_chunk(coord, chunk)?;
+			if worker.copy_chunk {
 				let sector = worker.header.sectors[index];
 				continue_if!(sector.is_empty());
 				worker.reader.seek(sector.seeker())?;
 				worker.header.sectors[index] = worker.writer.copy_chunk_from(&mut worker.reader)?;
 			} else {
-				worker.do_not_copy = false;
+				worker.copy_chunk = true;
 			}
 		}
 		let mut writer = worker.writer.finish();
@@ -1457,8 +1458,8 @@ impl RegionBuilder {
 }
 
 impl<F> ChunkBuilder for F
-where F: FnMut(RegionCoord, RegionFileChunk) -> McResult<()> {
-    fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionFileChunk) -> McResult<()> {
+where F: FnMut(RegionCoord, RegionBuilderChunk) -> McResult<()> {
+    fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionBuilderChunk) -> McResult<()> {
         self(coord, chunk)
     }
 }
@@ -1984,7 +1985,7 @@ coordinates/indices.
 struct ChunkCache;
 
 impl ChunkBuilder for ChunkCache {
-    fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionFileChunk) -> McResult<()> {
+    fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionBuilderChunk) -> McResult<()> {
         todo!()
     }
 }
@@ -2002,7 +2003,7 @@ impl ChunkBuilder for ChunkCache {
 // 	let bb = RegionBuilder::create("test.mcr")?
 // 		.compression(Compression::none())
 // 		.timestamp(Timestamp::utc_now())
-// 		.rebuild(|index: (i32, i32), chunker: RegionFileChunk| {
+// 		.rebuild(|index: (i32, i32), chunker: RegionBuilderChunk| {
 // 			match index {
 // 				target => {
 // 					chunker.write(&chunk)?;
