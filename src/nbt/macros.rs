@@ -9,13 +9,16 @@
 /// ```
 #[macro_export]
 macro_rules! compound {
-	($(($name:expr, $value:expr)),+) => {
+	($(($name:expr, $value:expr)),+$(,)?) => {
 		$crate::nbt::tag::Tag::Compound($crate::nbt::Map::from([
 			$(
 				($crate::list!(@literal_to_owned;$name), $crate::nbt::tag::Tag::from($value)),
 			)+
 		]))
 	};
+	// ($($name:expr => $value:expr),+$(,)?) => {
+
+	// };
 	() => {
 		$crate::nbt::tag::Tag::Compound($crate::Map::new())
 	};
@@ -35,7 +38,7 @@ macro_rules! compound {
 /// ```
 #[macro_export]
 macro_rules! list {
-	($($item:expr),+) => {
+	($($item:expr),+$(,)?) => {
 		$crate::tag::Tag::List($crate::tag::ListTag::from(std::vec![
 			$(
 				$crate::list!(@literal_to_owned;$item),
