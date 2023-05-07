@@ -84,6 +84,7 @@ macro_rules! get_child_in_array {
 	};
 }
 
+// "dry" as in "don't repeat yourself"
 macro_rules! get_child_dry {
 	(@map_get;mut;$map:ident $key:ident) => {
 		$map.get_mut($key).unwrap()
