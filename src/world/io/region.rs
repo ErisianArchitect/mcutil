@@ -1982,14 +1982,6 @@ So the basic idea is that you would have two collections of
 coordinates/indices.
 */
 
-struct ChunkCache;
-
-impl ChunkBuilder for ChunkCache {
-    fn build_chunk(&mut self, coord: RegionCoord, chunk: RegionBuilderChunk) -> McResult<()> {
-        todo!()
-    }
-}
-
 // TODO: Remove this when you're done
 // #[test]
 // fn RegionBuilder_test() -> McResult<()>{
