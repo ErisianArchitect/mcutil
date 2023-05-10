@@ -7,7 +7,7 @@ use crate::{
 	McResult,
 };
 
-pub const BUFFERSIZE: usize = 4096;
+pub const BUFFERSIZE: usize = 8192;
 
 /// For types that can be written to a writer.
 pub trait Writable {
