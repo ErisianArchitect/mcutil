@@ -518,7 +518,7 @@ impl NbtSize for NamedTag {
 impl<T> NbtWrite for &T
 where T: NbtWrite {
     fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
-        self.write_to(writer)
+        (*self).write_to(writer)
     }
 }
 
