@@ -1,5 +1,6 @@
 pub mod region;
 pub mod regionfile;
+pub mod regionbuilder;
 
 // impl<T: NbtWrite> Writable for T {
 //     fn write_to<W: Write>(&self, writer: &mut W) -> Result<usize,crate::McError> {
