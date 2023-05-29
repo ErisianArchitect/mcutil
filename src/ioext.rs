@@ -37,13 +37,13 @@ pub trait ReadExt: Read + Sized {
 }
 
 impl<W: Write + Sized> WriteExt for W {
-    fn write_value<T: Writable>(&mut self, value: T) -> McResult<usize> {
+	fn write_value<T: Writable>(&mut self, value: T) -> McResult<usize> {
 		value.write_to(self)
 	}
 }
 
 impl<R: Read + Sized> ReadExt for R {
-    fn read_value<T: Readable>(&mut self) -> McResult<T> {
+	fn read_value<T: Readable>(&mut self) -> McResult<T> {
 		T::read_from(self)
 	}
 }
@@ -55,11 +55,11 @@ pub trait SeekExt: Seek + Sized {
 }
 
 impl<T: Seek + Sized> SeekExt for T {
-    fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> McResult<u64> {
+	fn seek_to<S: Seekable>(&mut self, seek_offset: &S) -> McResult<u64> {
 		seek_offset.seek_to(self)
 	}
 	/// Returns a [SeekFrom] that  points to the current position in the stream.
-    fn seek_return(&mut self) -> McResult<SeekFrom> {
+	fn seek_return(&mut self) -> McResult<SeekFrom> {
 		Ok(SeekFrom::Start(self.stream_position()?))
 	}
 }
@@ -75,7 +75,7 @@ pub trait WriteZeroes {
 }
 
 impl<T: Write> WriteZeroes for T {
-    fn write_zeroes(&mut self, count: u64) -> std::io::Result<u64> {
+	fn write_zeroes(&mut self, count: u64) -> std::io::Result<u64> {
 		const ZEROES: &'static [u8; 4096] = &[0u8; 4096];
 		let mut remainder = count;
 		while remainder >= ZEROES.len() as u64 {
@@ -86,7 +86,7 @@ impl<T: Write> WriteZeroes for T {
 			self.write_all(&ZEROES[0..remainder as usize])?;
 		}
 		Ok(count)
-    }
+	}
 }
 
 /// A `Writable` struct that writes nothing to the writer.
@@ -97,7 +97,7 @@ impl<T: Write> WriteZeroes for T {
 pub struct WriteNothing;
 
 impl Writable for WriteNothing {
-    fn write_to<W: Write>(&self, _: &mut W) -> Result<usize,crate::McError> {
-        Ok(0)
-    }
+	fn write_to<W: Write>(&self, _: &mut W) -> Result<usize,crate::McError> {
+		Ok(0)
+	}
 }

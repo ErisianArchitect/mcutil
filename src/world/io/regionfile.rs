@@ -7,7 +7,7 @@ use std::path::{
 };
 
 #[allow(unused)]
-use super::region::{
+use super::region_old::{
 	self,
 	RegionHeader,
 	RegionSector, SectorTable,

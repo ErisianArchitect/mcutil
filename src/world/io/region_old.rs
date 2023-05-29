@@ -511,39 +511,39 @@ impl RegionSector {
 
 	/// The 4KiB sector offset.
 	/// Multiply this by `4096` to get the seek offset.
-	pub fn sector_offset(self) -> u64 {
+	pub fn sector_offset(&self) -> u64 {
 		self.0.overflowing_shr(8).0 as u64
 	}
 
 	/// The 4KiB sector offset that marks the end of this sector and the start of
 	/// the next.
-	pub fn sector_end_offset(self) -> u64 {
+	pub fn sector_end_offset(&self) -> u64 {
 		self.sector_offset() + self.sector_count()
 	}
 
 	/// The 4KiB sector count.
 	/// Multiply this by `4096` to get the sector size.
-	pub fn sector_count(self) -> u64 {
+	pub fn sector_count(&self) -> u64 {
 		(self.0 & 0xFF) as u64
 	}
 
 	/// The offset in bytes that this sector begins
 	/// at in the region file.
-	pub fn offset(self) -> u64 {
+	pub fn offset(&self) -> u64 {
 		self.sector_offset() * 4096
 	}
 
-	pub fn end_offset(self) -> u64 {
+	pub fn end_offset(&self) -> u64 {
 		self.sector_end_offset() * 4096
 	}
 
 	/// The size in bytes that this sector occupies.
-	pub fn size(self) -> u64 {
+	pub fn size(&self) -> u64 {
 		self.sector_count() * 4096
 	}
 
 	/// Determines if this is an "empty" sector.
-	pub fn is_empty(self) -> bool {
+	pub fn is_empty(&self) -> bool {
 		self.0 == 0
 	}
 
@@ -561,7 +561,7 @@ impl RegionSector {
 	/// to create two [RegionSector]s.
 	/// In the tuple returned, the first sector is the sector being
 	/// split from. The second sector is the one of the requested size.
-	pub fn split(self, sector_count: u8) -> Option<(Self, Self)> {
+	pub fn split(&self, sector_count: u8) -> Option<(Self, Self)> {
 		if sector_count <= (self.sector_count() as u8) {
 			let lhs_start = self.sector_offset();
 			let lhs_count = (self.sector_count() as u8) - sector_count;
@@ -1251,6 +1251,7 @@ impl<W: Write + Seek> RegionWriter<W> {
 		compression: Compression,
 		data: &T
 	) -> McResult<RegionSector> {
+		// TODO: Remove the fancy box-drawing characters to make it easier for screen readers.
 		/*	╭────────────────────────────────────────────────────────────────────────────────────────────────╮
 			│ Instead of using an in-memory buffer to do compression, I'll write                             │
 			│ directly to the writer. This should speed things up a bit, and reduce                          │
