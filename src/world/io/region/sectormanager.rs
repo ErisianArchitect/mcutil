@@ -65,8 +65,8 @@ impl SectorManager {
 	}
 
 	/// Creates a [SectorManager] from a [SectorTable].
-	pub fn from_table(table: SectorTable) -> Self {
-		Self::from(table)
+	pub fn from_table(table: &SectorTable) -> Self {
+		Self::from(table.iter())
 	}
 
 	pub fn unused_sectors(&self) -> &Vec<ManagedSector> {
@@ -209,38 +209,61 @@ impl SectorManager {
 
 impl<'a> IntoIterator for &'a SectorManager {
 
-    type Item = &'a ManagedSector;
+	type Item = &'a ManagedSector;
 	// type IntoIter = std::iter::Map<std::slice::Iter<'a, ManagedSector>, fn(&ManagedSector) -> ManagedSector>;
 	type IntoIter = std::slice::Iter<'a, ManagedSector>;
 
-    fn into_iter(self) -> Self::IntoIter {
+	fn into_iter(self) -> Self::IntoIter {
 		self.unused_sectors.iter()
-    }
+	}
 }
 
 impl<'a> IntoIterator for &'a mut SectorManager {
 
-    type Item = &'a mut ManagedSector;
+	type Item = &'a mut ManagedSector;
 	type IntoIter = std::slice::IterMut<'a, ManagedSector>;
 
-    fn into_iter(self) -> Self::IntoIter {
+	fn into_iter(self) -> Self::IntoIter {
 		self.unused_sectors.iter_mut()
-    }
+	}
 }
 
-/// Create [SectorManager] from an Iterator.
-impl<T: Into<ManagedSector>, It: IntoIterator<Item = T>> From<It> for SectorManager {
-	/// Try not to feed the [SectorManager] collections that
-	/// have intersecting sectors.
-    fn from(value: It) -> Self {
+/// Helper trait for working with iterators converting them into SectorManagers.
+pub trait ManagedSectorIteratorItem {
+	fn convert(self) -> ManagedSector;
+}
+
+impl ManagedSectorIteratorItem for RegionSector {
+	fn convert(self) -> ManagedSector {
+		ManagedSector::from(self)
+	}
+}
+
+impl ManagedSectorIteratorItem for &RegionSector {
+	fn convert(self) -> ManagedSector {
+		ManagedSector::from(*self)
+	}
+}
+
+impl ManagedSectorIteratorItem for ManagedSector {
+	fn convert(self) -> ManagedSector {
+		self
+	}
+}
+
+impl ManagedSectorIteratorItem for &ManagedSector {
+	fn convert(self) -> ManagedSector {
+		*self
+	}
+}
+
+impl<'a,T: ManagedSectorIteratorItem, It: IntoIterator<Item = T>> From<It> for SectorManager {
+	fn from(value: It) -> Self {
 		use std::cmp::Ordering;
-		// Filter out empty sectors.
 		let mut filtered_sectors = value.into_iter()
-			.map(T::into)
+			.map(ManagedSectorIteratorItem::convert)
 			.filter(ManagedSector::not_empty)
 			.collect::<Vec<ManagedSector>>();
-		// In order to measure the gap between sectors, they must
-		// be sorted.
 		filtered_sectors.sort_by(|a,b| {
 			if a.end <= b.start {
 				Ordering::Less
@@ -280,5 +303,60 @@ impl<T: Into<ManagedSector>, It: IntoIterator<Item = T>> From<It> for SectorMana
 			unused_sectors,
 			end_sector: ManagedSector::end_sector(end_sector.end)
 		}
-    }
+	}
 }
+
+// /// Create [SectorManager] from an Iterator.
+// impl<T: Into<ManagedSector>, It: IntoIterator<Item = T>> From<It> for SectorManager {
+// 	/// Try not to feed the [SectorManager] collections that
+// 	/// have intersecting sectors.
+//     fn from(value: It) -> Self {
+// 		use std::cmp::Ordering;
+// 		// Filter out empty sectors.
+// 		let mut filtered_sectors = value.into_iter()
+// 			.map(T::into)
+// 			.filter(ManagedSector::not_empty)
+// 			.collect::<Vec<ManagedSector>>();
+// 		// In order to measure the gap between sectors, they must
+// 		// be sorted.
+// 		filtered_sectors.sort_by(|a,b| {
+// 			if a.end <= b.start {
+// 				Ordering::Less
+// 			} else if b.end <= a.start {
+// 				Ordering::Greater
+// 			// Non-equal sectors can evaluate to equal.
+// 			} else {
+// 				Ordering::Equal
+// 			}
+// 		});
+// 		let initial_state = (
+// 			Vec::<ManagedSector>::new(),
+// 			// Initialized with the header sectors.
+// 			ManagedSector::header(),
+// 		);
+// 		// Collect unused sectors
+// 		let (
+// 			unused_sectors,
+// 			// Since the sectors are ordered, the last sector in the fold
+// 			// will be the caboose.
+// 			end_sector
+// 		) = filtered_sectors.into_iter()
+// 			.fold(initial_state,|(mut unused_sectors, previous), sector| {	
+// 				if let Some(_) = previous.gap(&sector) {
+// 					unused_sectors.push(ManagedSector::new(
+// 						previous.end,
+// 						sector.start
+// 					));
+// 				}
+// 				// Initialize the state for the next iteration.
+// 				( 
+// 					unused_sectors,
+// 					sector
+// 				)
+// 			});
+// 		Self { 
+// 			unused_sectors,
+// 			end_sector: ManagedSector::end_sector(end_sector.end)
+// 		}
+//     }
+// }
