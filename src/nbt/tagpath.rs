@@ -55,11 +55,16 @@ macro_rules! tag_path_part_from_impl {
 tag_path_part_from_impl!(value:&str; AtKey(value.to_owned()));
 tag_path_part_from_impl!(value:String; AtKey(value));
 
-tag_path_part_from_impl!(i64; Numeric);
 tag_path_part_from_impl!(isize; Numeric);
 tag_path_part_from_impl!(usize; Numeric);
+tag_path_part_from_impl!(u64; Numeric);
+tag_path_part_from_impl!(i64; Numeric);
 tag_path_part_from_impl!(i32; Numeric);
 tag_path_part_from_impl!(u32; Numeric);
+tag_path_part_from_impl!(i16; Numeric);
+tag_path_part_from_impl!(u16; Numeric);
+tag_path_part_from_impl!(i8; Numeric);
+tag_path_part_from_impl!(u8; Numeric);
 
 #[derive(Debug, Error)]
 pub enum TagPathError {
@@ -239,9 +244,8 @@ fn tag_path_parser() -> impl Parser<TagPathToken, Vec<TagPathPart>, Error = Simp
 
 impl Display for TagPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut remaining = self.0.as_slice();
-		if remaining.len() > 0 {
-			match &remaining[0] {
+		self.0.iter().try_for_each(|part| {
+			match part {
 				TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
 				TagPathPart::AtKey(key) => {
 					if crate::nbt::format::is_identifier(key) {
@@ -253,24 +257,40 @@ impl Display for TagPath {
 					}
 				},
 			}
-			remaining = &remaining[1..];
-			while !remaining.is_empty() {
-				match &remaining[0] {
-					TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
-					TagPathPart::AtKey(key) => {
-						if crate::nbt::format::is_identifier(key) {
-							write!(f, ".{key}")?;
-						} else {
-							write!(f, "[\'")?;
-							crate::nbt::format::write_escaped_string(f, key)?;
-							write!(f, "\']")?;
-						}
-					},
-				}
-				remaining = &remaining[1..];
-			}
-		}
-		Ok(())
+			Ok(())
+		})
+        // let mut remaining = self.0.as_slice();
+		// if remaining.len() > 0 {
+		// 	match &remaining[0] {
+		// 		TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
+		// 		TagPathPart::AtKey(key) => {
+		// 			if crate::nbt::format::is_identifier(key) {
+		// 				write!(f, "{key}")?;
+		// 			} else {
+		// 				write!(f, "[\"")?;
+		// 				crate::nbt::format::write_escaped_string(f, key)?;
+		// 				write!(f, "\"]")?;
+		// 			}
+		// 		},
+		// 	}
+		// 	remaining = &remaining[1..];
+		// 	while !remaining.is_empty() {
+		// 		match &remaining[0] {
+		// 			TagPathPart::AtIndex(index) => write!(f, "[{index}]")?,
+		// 			TagPathPart::AtKey(key) => {
+		// 				if crate::nbt::format::is_identifier(key) {
+		// 					write!(f, ".{key}")?;
+		// 				} else {
+		// 					write!(f, "[\'")?;
+		// 					crate::nbt::format::write_escaped_string(f, key)?;
+		// 					write!(f, "\']")?;
+		// 				}
+		// 			},
+		// 		}
+		// 		remaining = &remaining[1..];
+		// 	}
+		// }
+		// Ok(())
     }
 }
 
