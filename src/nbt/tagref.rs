@@ -1,12 +1,8 @@
-use std::fmt::Display;
-use std::process::Child;
-
-use chumsky::primitive::todo;
-
 /*
 This is to create a reference representation type of nbt::Tag and nbt::ListTag.
 This is meant to allow for accessing values directly.
 */
+use std::fmt::Display;
 use crate::nbt::tag::*;
 use crate::nbt::tagpath;
 use crate::nbt::tagtype::*;
@@ -169,7 +165,7 @@ impl<'a> ValueRef<'a> {
 			return None;
 		}
 		let mut walker: Option<ValueRef<'a>> = self.get_child(&path[0]);
-		let mut path_remaining = &path[1..];
+		let path_remaining = &path[1..];
 		for part in path_remaining {
 			let Some(next) = walker else { break };
 			walker = next.get_child(part);
