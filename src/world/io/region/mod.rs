@@ -9,6 +9,7 @@ pub mod compressionscheme;
 pub mod managedsector;
 pub mod sectormanager;
 pub mod regionfile;
+pub mod prelude;
 
 /// Tests if a value is a multiple of 4096.
 pub const fn is_multiple_of_4096(n: u64) -> bool {
