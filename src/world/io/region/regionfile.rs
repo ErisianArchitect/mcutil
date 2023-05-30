@@ -1,3 +1,6 @@
+// TODO: Remove this when you no longer want to silence the warnings.
+#![allow(unused)]
+
 use std::{
 	io::{
 		BufReader, BufWriter,
@@ -30,7 +33,8 @@ use super::{
 pub struct RegionFile {
 	header: RegionHeader,
 	sector_manager: SectorManager,
-	file_handle: Option<File>,
+	write_handle: BufWriter<File>,
+	read_handle: BufReader<File>
 }
 
 impl RegionFile {
@@ -38,33 +42,48 @@ impl RegionFile {
 	pub fn new<P: AsRef<Path>>(path: P) -> McResult<Self> {
 		let path = path.as_ref();
 		if path.is_file() {
-			let mut reader = BufReader::new(File::open(path)?);
+			let mut writer = BufWriter::new(File::options().write(true).open(path)?);
+			let mut reader = BufReader::new(File::options().read(true).open(path)?);
 			let header = RegionHeader::read_from(&mut reader)?;
-			let sector_manager = SectorManager::from_table(header.sectors.clone());
+			let sector_manager = SectorManager::from(header.sectors.iter());
 			Ok(Self {
 				header,
 				sector_manager,
-				file_handle: None,
+				write_handle: writer,
+				read_handle: reader,
 			})
 		} else {
-			let mut writer = BufWriter::new(File::open(path)?);
-			// Create empty region file.
+			// Create region file with empty header.
+			let mut writer = BufWriter::new(File::create(path)?);
+			// Write empty header.
 			writer.write_zeroes(8192)?;
+			// Don't forget to flush
+			writer.flush()?;
+			let mut reader = BufReader::new(File::options().read(true).open(path)?);
 			let header = RegionHeader::default();
 			let sector_manager = SectorManager::new();
 			Ok(Self {
 				header,
 				sector_manager,
-				file_handle: None,
+				write_handle: writer,
+				read_handle: reader,
 			})
 		}
 	}
 
-	pub fn write_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, value: &T, timestamp: Ts) -> McResult<RegionSector> {
+	pub fn write_without_timestamp<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
+		// Get the sector from sector table at coord
+		// If the sector is not empty, free it in the SectorManager.
+		// Then write the value into the pre-write buffer
+		// Once the value is written into the pre-write buffer, the
+		// write size is now known, so we can determine how many
+		// 4KiB blocks are needed for this sector, allowing us to 
+		// allocate it from the SectorManager.
+		// Then we flush the data to the writer.
 		todo!()
 	}
 
-	pub fn write_without_timestamp<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
+	pub fn write_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, value: &T, timestamp: Ts) -> McResult<RegionSector> {
 		todo!()
 	}
 
