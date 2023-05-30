@@ -26,7 +26,6 @@ use super::{
 use flate2::{
 	read::GzDecoder,
 	read::ZlibDecoder,
-	// write::ZlibEncoder, Compress,
 };
 
 /// An abstraction for reading Region files.
