@@ -266,32 +266,45 @@ pub(crate) fn is_identifier(value: &str) -> bool {
 }
 
 pub(crate) fn write_escaped_string<S: AsRef<str>, W: Write>(writer: &mut W, unescaped: S) -> std::fmt::Result {
-	// Macros make the whole world better!
 	macro_rules! match_char {
 		($buffer:expr, $input:expr; $($tok:tt => $escaped:expr),+) => {
 			match $input {
 				$(
-					$tok => write!($buffer, "{}", $escaped),
+					$tok => write!($buffer, "{}", $escaped)?,
 				)+
 			}
 		};
 	}
-	unescaped.as_ref().chars().try_for_each(|ch| {
-		match_char!{writer, ch;
-			// TODO: Find out what escape sequences are supported by Minecraft.
-			'\\' => "\\\\",
-			'/' => "\\/",
-			'"' => "\\\"",
-			'\'' => "\\'",
-			'\x08' => "\\b",
-			'\x0C' => "\\f",
-			'\n' => "\\n",
-			'\r' => "\\r",
-			'\t' => "\\t",
-			'\0' => "\\0",
-			other => other
+	fn escape_char(c: char) -> bool {
+		match c {
+			'\\' | '/' | '"' | '\'' | '\x08' | '\x0C' | '\n' | '\r' | '\t' | '\0' => true,
+			other => false,
 		}
-	})
+	}
+	let mut next = unescaped.as_ref();
+	while next.len() > 0 {
+		if let Some(index) = next.find(escape_char) {
+			write!(writer, "{}", &next[..index])?;
+			let esc_char = next[index..].chars().next().unwrap();
+			match_char!{writer, esc_char;
+				'\\' => "\\\\",
+				'/' => "\\/",
+				'"' => "\\\"",
+				'\'' => "\\'",
+				'\x08' => "\\b",
+				'\x0C' => "\\f",
+				'\n' => "\\n",
+				'\r' => "\\r",
+				'\t' => "\\t",
+				'\0' => "\\0",
+				other => other
+			}
+			next = &next[index + 1..];
+		} else {
+			return write!(writer, "{next}");
+		}
+	}
+	Ok(())
 }
 
 /// Space count constrained to powers of two with an upper-bound of 32 and a lower bound of 1.
