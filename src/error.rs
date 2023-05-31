@@ -26,6 +26,10 @@ pub enum McError {
 	DuplicateChunk,
 	#[error("Stream position was not on 4KiB boundary.")]
 	StreamSectorBoundaryError,
+	#[error("Attempted to write chunk data that takes up more that 255 4KiB blocks.")]
+	ChunkTooLarge,
+	#[error("Failed to allocate RegionSector.")]
+	RegionAllocationFailure,
 }
 
 impl McError {
