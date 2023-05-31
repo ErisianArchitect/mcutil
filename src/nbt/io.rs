@@ -256,7 +256,7 @@ macro_rules! primitive_io {
 			impl NbtWrite for $primitive {
 				#[doc = "Attempts to write primitive to writer. This will write in Big-Endian byte-order."]
 				fn nbt_write<W: Write>(&self, writer: &mut W) -> Result<usize, McError> {
-					Ok(writer.write(self.to_be_bytes().as_slice())?)
+					Ok(writer.write(&self.to_be_bytes())?)
 				}
 			}
 		)+
