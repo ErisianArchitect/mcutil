@@ -57,6 +57,7 @@ impl RegionSector {
 		self.sector_offset() * 4096
 	}
 
+	/// The offset in bytes that this sector ends at in the region file.
 	pub fn end_offset(&self) -> u64 {
 		self.sector_end_offset() * 4096
 	}
