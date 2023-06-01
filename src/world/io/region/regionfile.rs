@@ -2,7 +2,7 @@
 
 use std::{
 	io::{
-		BufReader, BufWriter,
+		BufReader,
 		Read, Write,
 		Seek, SeekFrom, Cursor,
 	},
@@ -67,6 +67,10 @@ impl RegionFile {
 		&self.header.timestamps
 	}
 
+	pub fn header(&self) -> &RegionHeader {
+		&self.header
+	}
+
 	pub fn get_sector<C: Into<RegionCoord>>(&self, coord: C) -> RegionSector {
 		let coord: RegionCoord = coord.into();
 		self.header.sectors[coord.index()]
@@ -80,34 +84,38 @@ impl RegionFile {
 	/// Creates a new [RegionFile] object, opening or creating a Minecraft region file at the given path.
 	pub fn open_or_create<P: AsRef<Path>>(path: P) -> McResult<Self> {
 		let path = path.as_ref();
+		let write_buf = Cursor::new(Vec::with_capacity(4096*2));
 		if RegionFile::is_valid_region_file(path)? {
-			let mut file_handle = File::options().write(true).read(true).open(path)?;
+			let mut file_handle = File::options()
+				// Need to be able to read and write.
+				.read(true).write(true)
+				.open(path)?;
 			let header = {				
 				let mut temp_reader = BufReader::new((&mut file_handle).take(4096*2));
 				RegionHeader::read_from(&mut temp_reader)?
 			};
 			let sector_manager = SectorManager::from(header.sectors.iter());
 			Ok(Self {
+				file_handle,
+				write_buf,
 				header,
 				sector_manager,
-				file_handle,
-				write_buf: Cursor::new(Vec::with_capacity(4096*2)),
 			})
 		} else {
 			// Create region file with empty header.
-			let mut file_handle = File::options().write(true).read(true).create(true).open(path)?;
-			// Write empty header.
-			{
-				let mut temp_writer = BufWriter::new(&mut file_handle);
-				temp_writer.write_zeroes(4096*2)?;
-			}
-			let header = RegionHeader::default();
-			let sector_manager = SectorManager::new();
+			let mut file_handle = File::options()
+				// Need to be able to read and write.
+				.read(true).write(true)
+				// The file doesn't exist, so we need to create it.
+				.create(true)
+				.open(path)?;
+			// Write an empty header since this is a new file.
+			file_handle.write_zeroes(4096*2)?;
 			Ok(Self {
-				header,
-				sector_manager,
 				file_handle,
-				write_buf: Cursor::new(Vec::with_capacity(4096*2)),
+				write_buf,
+				header: RegionHeader::default(),
+				sector_manager: SectorManager::new(),
 			})
 		}
 	}
@@ -121,7 +129,6 @@ impl RegionFile {
 		// To kill two birds with one stone, I'll write all 2s so that I don't have to go back and write the
 		// compression scheme after writing the length.
 		self.write_buf.write_all(&[2u8; 5])?;
-		// TODO: Allow tweaking the compression.
 		// Now we'll write the data to the compressor.
 		let mut encoder = ZlibEncoder::new(&mut self.write_buf, compression);
 		value.write_to(&mut encoder)?;
@@ -167,8 +174,7 @@ impl RegionFile {
 		// Apply sector changes to the header table both in memory and in the file.
 		self.header.sectors[coord.index()] = new_sector;
 		// Seek to where sector is stored in the header and write the sector.
-		let seek_offset = coord.index() * 4;
-		self.file_handle.seek(SeekFrom::Start(seek_offset as u64))?;
+		self.file_handle.seek(coord.sector_table_offset())?;
 		self.file_handle.write_value(new_sector)?;
 		// I'm pretty sure that flush() doesn't do anything, but I'll put it here just in case.
 		self.file_handle.flush()?;
@@ -183,14 +189,15 @@ impl RegionFile {
 		let timestamp: Timestamp = timestamp.into();
 		self.header.timestamps[coord.index()] = timestamp;
 		// Write the timestamp to the file.
-		self.file_handle.seek(SeekFrom::Start((coord.index() * 4 + 4096) as u64))?;
+		self.file_handle.seek(coord.timestamp_table_offset())?;
 		self.file_handle.write_value(timestamp)?;
 		// I'm pretty sure that flush() doesn't do anything, but I'll put it here just in case.
 		self.file_handle.flush()?;
 		Ok(allocation)
 	}
 
-	/// Writes data to the region file with the `utc_now` timestamp and returns the [RegionSector] where it was written.
+	/// Writes data to the region file with the `utc_now` timestamp
+	///  and returns the [RegionSector] where it was written.
 	pub fn write_with_utcnow<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, compression: Compression, value: &T) -> McResult<RegionSector> {
 		self.write_timestamped(coord, compression, value, Timestamp::utc_now())
 	}
@@ -222,5 +229,23 @@ impl RegionFile {
 				T::read_from(&mut reader.take((length - 1) as u64))
 			},
 		}
+	}
+
+	/// Deletes data from a region file (Returns the sector that was deleted).
+	pub fn delete_data<C: Into<RegionCoord>>(&mut self, coord: C) -> McResult<RegionSector> {
+		let coord: RegionCoord = coord.into();
+		let sector = self.header.sectors[coord.index()];
+		if sector.is_empty() {
+			return Ok(sector);
+		}
+		self.header.sectors[coord.index()] = RegionSector::default();
+		self.header.timestamps[coord.index()] = Timestamp::default();
+		// Clear the sector from the sector table
+		self.file_handle.seek(coord.sector_table_offset())?;
+		self.file_handle.write_zeroes(4)?;
+		// Clear the timestamp from the timestamp table.
+		self.file_handle.seek(coord.timestamp_table_offset())?;
+		self.file_handle.write_zeroes(4)?;
+		Ok(sector)
 	}
 }
