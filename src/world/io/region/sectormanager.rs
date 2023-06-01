@@ -8,14 +8,12 @@ use std::{
 };
 
 use crate::{
-	McResult,
+	McResult, McError,
 	ioext::*,
 };
 
 use super::{
-	header::SectorTable,
-	sector::*,
-	managedsector::*,
+	prelude::*,
 };
 
 // TODO: Documentation on this sucks.
@@ -170,7 +168,34 @@ impl SectorManager {
 		}
 	}
 
+	/// This will allocate a new sector, and if succesful, free the old one.
+	#[must_use]
+	pub fn reallocate_err(&mut self, free: RegionSector, new_size: u8) -> McResult<RegionSector> {
+		let result = self.allocate_err(new_size);
+		if result.is_ok() {
+			self.free(free);
+		}
+		result
+	}
+
+	/// This will allocate a new sector, and if successful, free the old one.
+	#[must_use]
+	pub fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
+		let result = self.allocate(new_size);
+		if result.is_some() {
+			self.free(free);
+		}
+		result
+	}
+
+	/// A version of allocate that returns a result rather than an option.
+	#[must_use]
+	pub fn allocate_err(&mut self, size: u8) -> McResult<RegionSector> {
+		self.allocate(size).ok_or(McError::RegionAllocationFailure)
+	}
+
 	/// Allocate a sector of a specified size.
+	#[must_use]
 	pub fn allocate(&mut self, size: u8) -> Option<RegionSector> {
 		self.unused_sectors.iter()
 			// Dereference the sector to satisfy borrow checker.
@@ -204,6 +229,7 @@ impl SectorManager {
 					// out of space, we'll just do this.
 					// .expect("The SectorManager's end_sector was not large enough for the allocation. This kind of failure should not happen.")
 			})
+			// .ok_or(crate::McError::RegionAllocationFailure)
 	}
 }
 
