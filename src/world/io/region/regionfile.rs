@@ -1,5 +1,4 @@
 // TODO: Remove this when you no longer want to silence the warnings.
-#![allow(unused)]
 
 use std::{
 	io::{
@@ -15,23 +14,23 @@ use std::{
 	},
 };
 
-use chumsky::chain::Chain;
 use flate2::{
 	write::ZlibEncoder,
+	read::{
+		GzDecoder,
+		ZlibDecoder,
+	},
 	Compression,
 };
 
 use crate::{
-	McResult,
-	ioext::*, world::io::region::{required_sectors, pad_size},
+	McResult, McError,
+	ioext::*,
 };
 
 use super::{
-	timestamp::*,
-	sector::*,
-	coord::*,
-	sectormanager::*,
-	header::*, prelude::CompressionScheme,
+	prelude::*,
+	{required_sectors, pad_size},
 };
 
 /// A construct for working with RegionFiles.
@@ -57,6 +56,24 @@ impl RegionFile {
 		// to fit the header (8192 bytes). There doesn't need to be any
 		// data beyond the header.
 		Ok(path.is_file() && path.metadata()?.len() >= (4096*2))
+	}
+
+	pub fn sectors(&self) -> &SectorTable {
+		&self.header.sectors
+	}
+
+	pub fn timestamps(&self) -> &TimestampTable {
+		&self.header.timestamps
+	}
+
+	pub fn get_sector<C: Into<RegionCoord>>(&self, coord: C) -> RegionSector {
+		let coord: RegionCoord = coord.into();
+		self.header.sectors[coord.index()]
+	}
+	
+	pub fn get_timestamp<C: Into<RegionCoord>>(&self, coord: C) -> Timestamp {
+		let coord: RegionCoord = coord.into();
+		self.header.timestamps[coord.index()]
 	}
 
 	/// Creates a new [RegionFile] object, opening or creating a Minecraft region file at the given path.
@@ -94,18 +111,10 @@ impl RegionFile {
 		}
 	}
 
-	pub fn write_data<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
-		// Get the sector from sector table at coord
-		// If the sector is not empty, free it in the SectorManager.
-		// Then write the value into the pre-write buffer
-		// Once the value is written into the pre-write buffer, the
-		// write size is now known, so we can determine how many
-		// 4KiB blocks are needed for this sector, allowing us to 
-		// allocate it from the SectorManager.
-		// Then we flush the data to the writer.
+	/// Writes data to the region file at the specified coordinate and returns the [RegionSector] where it was written. This will also update the header (but will not update the timestamp).
+	pub fn write_data<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, compression: Compression, value: &T) -> McResult<RegionSector> {
 		let coord: RegionCoord = coord.into();
-		let sector = self.header.sectors[coord.index()];
-		// Clear the buffer for writing
+		// Clear the write_buf to prepare it for writing.
 		self.write_buf.get_mut().clear();
 		// Gotta write 5 bytes to the buffer so that there's room for the length and the compression scheme.
 		// To kill two birds with one stone, I'll write all 2s so that I don't have to go back and write the
@@ -113,7 +122,7 @@ impl RegionFile {
 		self.write_buf.write_all(&[2u8; 5])?;
 		// TODO: Allow tweaking the compression.
 		// Now we'll write the data to the compressor.
-		let mut encoder = ZlibEncoder::new(&mut self.write_buf, Compression::best());
+		let mut encoder = ZlibEncoder::new(&mut self.write_buf, compression);
 		value.write_to(&mut encoder)?;
 		encoder.finish()?;
 		// Get the length of the written data by getting the length of the buffer and subtracting 5 (for
@@ -124,7 +133,7 @@ impl RegionFile {
 		let required_sectors = required_sectors((length + 5) as u32);
 		// If there is an overflow, return an error because there's no way to write it to the file.
 		if required_sectors > 255 {
-			return Err(crate::McError::ChunkTooLarge);
+			return Err(McError::ChunkTooLarge);
 		}
 		// Write pad zeroes
 		// + 5 because you need to add the (length_bytes + CompressionScheme)
@@ -135,46 +144,82 @@ impl RegionFile {
 		// Add 1 to the length because the specification requires that the compression scheme is included in the length for some reason.
 		self.write_buf.write_value((length + 1) as u32)?;
 		// Allocation
-		let allocation = match self.sector_manager.allocate(required_sectors as u8) {
-			Some(value) => value,
-			None => return Err(crate::McError::RegionAllocationFailure),
+		let old_sector = self.header.sectors[coord.index()];
+		let new_sector = if required_sectors == (old_sector.sector_count() as u32) {
+			// If the data written takes up the same number of sectors as the old sector, then we can just use the old one.
+			old_sector
+		} else if required_sectors < (old_sector.sector_count() as u32) {
+			// If the required sectors are LESS than the old_sector's size, then we don't need to allocate a new sector,
+			// we can split our new one off from the old one and then free the old sector.
+			// It's safe to unwrap here because of the check in the if expression.
+			let (new_sector, old_sector) = old_sector.split_left(required_sectors as u8).unwrap();
+			self.sector_manager.free(old_sector);
+			new_sector
+		} else {
+			// We can't do anything with the old sector, so we'll just free it and allocate a new one.
+			// Thankfully I wrote this special nethod to do just that.
+			self.sector_manager.reallocate_err(old_sector, required_sectors as u8)?
 		};
 		// Writing to file
-		self.file_handle.seek(SeekFrom::Start(allocation.offset()))?;
+		self.file_handle.seek(SeekFrom::Start(new_sector.offset()))?;
 		self.file_handle.write_all(self.write_buf.get_ref().as_slice())?;
-		// Sector
-		self.header.sectors[coord.index()] = allocation;
+		// Apply sector changes to the header table both in memory and in the file.
+		self.header.sectors[coord.index()] = new_sector;
 		// Seek to where sector is stored in the header and write the sector.
 		let seek_offset = coord.index() * 4;
 		self.file_handle.seek(SeekFrom::Start(seek_offset as u64))?;
-		self.file_handle.write_value(allocation)?;
+		self.file_handle.write_value(new_sector)?;
+		// I'm pretty sure that flush() doesn't do anything, but I'll put it here just in case.
+		self.file_handle.flush()?;
+		Ok(new_sector)
+	}
+
+
+	/// Writes data to the region file with a timestamp and returns the [RegionSector] where it was written.
+	pub fn write_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, compression: Compression, value: &T, timestamp: Ts) -> McResult<RegionSector> {
+		let coord: RegionCoord = coord.into();
+		let allocation = self.write_data(coord, compression, value)?;
+		let timestamp: Timestamp = timestamp.into();
+		self.header.timestamps[coord.index()] = timestamp;
+		// Write the timestamp to the file.
+		self.file_handle.seek(SeekFrom::Start((coord.index() * 4 + 4096) as u64))?;
+		self.file_handle.write_value(timestamp)?;
 		// I'm pretty sure that flush() doesn't do anything, but I'll put it here just in case.
 		self.file_handle.flush()?;
 		Ok(allocation)
 	}
 
-	pub fn write_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, value: &T, timestamp: Ts) -> McResult<RegionSector> {
-		let coord: RegionCoord = coord.into();
-		let allocation = self.write_data(coord, value)?;
-		self.header.timestamps[coord.index()] = timestamp.into();
-		Ok(allocation)
+	/// Writes data to the region file with the `utc_now` timestamp and returns the [RegionSector] where it was written.
+	pub fn write_with_utcnow<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, compression: Compression, value: &T) -> McResult<RegionSector> {
+		self.write_timestamped(coord, compression, value, Timestamp::utc_now())
 	}
 
-	pub fn write_with_utcnow<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
-		self.write_timestamped(coord, value, Timestamp::utc_now())
-	}
-
-	pub fn get_sector<C: Into<RegionCoord>>(&self, coord: C) -> RegionSector {
-		let coord: RegionCoord = coord.into();
-		self.header.sectors[coord.index()]
-	}
-
-	pub fn get_timestamp<C: Into<RegionCoord>>(&self, coord: C) -> Timestamp {
-		let coord: RegionCoord = coord.into();
-		self.header.timestamps[coord.index()]
-	}
-
+	/// Reads data from the region file.
 	pub fn read_data<C: Into<RegionCoord>, T: Readable>(&mut self, coord: C) -> McResult<T> {
-		todo!()
+		let coord: RegionCoord = coord.into();
+		let sector = self.header.sectors[coord.index()];
+		if sector.is_empty() {
+			return Err(McError::ChunkNotFound);
+		}
+		self.file_handle.seek(SeekFrom::Start(sector.offset()))?;
+		let mut reader = BufReader::new(&mut self.file_handle);
+		let length: u32 = reader.read_value()?;
+		if length == 0 {
+			return Err(McError::ChunkNotFound);
+		}
+		let scheme: CompressionScheme = reader.read_value()?;
+		match scheme {
+			CompressionScheme::GZip => {
+				let mut decoder = GzDecoder::new(reader.take((length - 1) as u64));
+				T::read_from(&mut decoder)
+			},
+			CompressionScheme::ZLib => {
+				let mut decoder = ZlibDecoder::new(reader.take((length - 1) as u64));
+				T::read_from(&mut decoder)
+			},
+			CompressionScheme::Uncompressed => {
+				T::read_from(&mut reader.take((length - 1) as u64))
+			},
+		}
 	}
 }
