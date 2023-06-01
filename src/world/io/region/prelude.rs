@@ -9,4 +9,5 @@ pub use super::{
 	compressionscheme::*,
 	reader::*,
 	writer::*,
+	regionfile::*,
 };
