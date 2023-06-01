@@ -11,7 +11,7 @@ use std::{
 /// This struct represents a chunk coordinate within a region file.
 /// The coordinate can be an absolute coordinate and it will be
 /// normalized to relative coordinates.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug,)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
 pub struct RegionCoord(u16);
 
 impl RegionCoord {
