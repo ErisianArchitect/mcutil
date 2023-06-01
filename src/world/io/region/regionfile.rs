@@ -51,6 +51,7 @@ pub struct RegionFile {
 impl RegionFile {
 	/// Makes sure that the file located at the path is a valid region file. (must exist and have a size >= 8192).
 	fn is_valid_region_file<P: AsRef<Path>>(path: P) -> McResult<bool> {
+		// TODO: Should I check that the region file is a multiple of 4096?
 		let path = path.as_ref();
 		// Must be file and the (length + 1) of the file must be large enough
 		// to fit the header (8192 bytes). There doesn't need to be any
@@ -77,7 +78,7 @@ impl RegionFile {
 	}
 
 	/// Creates a new [RegionFile] object, opening or creating a Minecraft region file at the given path.
-	pub fn new<P: AsRef<Path>>(path: P) -> McResult<Self> {
+	pub fn open_or_create<P: AsRef<Path>>(path: P) -> McResult<Self> {
 		let path = path.as_ref();
 		if RegionFile::is_valid_region_file(path)? {
 			let mut file_handle = File::options().write(true).read(true).open(path)?;
