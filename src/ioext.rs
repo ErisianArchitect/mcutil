@@ -76,7 +76,7 @@ pub trait WriteZeroes {
 
 impl<T: Write> WriteZeroes for T {
 	fn write_zeroes(&mut self, count: u64) -> std::io::Result<u64> {
-		const ZEROES: &'static [u8; 4096] = &[0u8; 4096];
+		const ZEROES: &'static [u8; 8192] = &[0u8; 8192];
 		let mut remainder = count;
 		while remainder >= ZEROES.len() as u64 {
 			self.write_all(ZEROES)?;
