@@ -30,6 +30,8 @@ pub enum McError {
 	ChunkTooLarge,
 	#[error("Failed to allocate RegionSector.")]
 	RegionAllocationFailure,
+	#[error("Region file is too small to contain a header.")]
+	InvalidRegionFile,
 }
 
 impl McError {
