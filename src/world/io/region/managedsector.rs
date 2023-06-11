@@ -143,11 +143,12 @@ impl ManagedSector {
 
 	/// Allocates a [RegionSector] from this [ManagedSector], reducing
 	/// the size in the process. Returns `None` if there isn't enough
-	/// space.
+	/// space. This will reduce the size to zero if that's all the space left.
+	/// Does not allow allocation beyond 0x10000fe.
 	pub fn allocate(&mut self, size: u8) -> Option<RegionSector> {
 		let new_start = self.start + (size as u32);
 		// Not enough space.
-		if new_start > self.end {
+		if new_start > self.end.min(0x10000fe) {
 			return None
 		}
 		let start = self.start;
@@ -155,9 +156,47 @@ impl ManagedSector {
 		Some(RegionSector::new(start, size))
 	}
 
+	/// There may be cases where [ManagedSector] is being used to
+	/// represent an unused space in a region file, such as a
+	/// deleted chunk. In those cases, the split method can be used
+	/// to create two [ManagedSector]s.
+	/// In the tuple returned, the first sector is the sector being
+	/// split from. The second sector is the one of the requested size.
+	/// (Old, New)
+	pub fn split(self, sector_count: u32) -> Option<(Self, Self)> {
+		if sector_count <= self.size() {
+			let middle = self.end - sector_count;
+			Some((
+				// Old
+				ManagedSector::new(self.start, middle),
+				// New
+				ManagedSector::new(middle, self.end)
+			))
+		} else {
+			None
+		}
+	}
+
+	/// Similar to the split function, splits a [ManagedSector] into two sectors, one with
+	/// the requested size, and the other with the remainder of the size from the split sector.
+	/// Instead of splitting the right hand side, this function splits the left hand side.
+	/// That means that the split comes from the lower bound of the sector, and is also the left-hand return value.
+	/// (New, Old)
+	pub fn split_left(self, sector_count: u32) -> Option<(Self, Self)> {
+		if sector_count <= self.size() {
+			let middle = self.start + sector_count;
+			Some((
+				ManagedSector::new(self.start, middle),
+				ManagedSector::new(middle, self.end)
+			))
+		} else {
+			None
+		}
+	}
+
 	/// Attempts to reduce the size of a sector by moving the start
 	/// offset.
-	pub fn reduce(&self, size: u32) -> Option<Self> {
+	pub fn reduce(self, size: u32) -> Option<Self> {
 		let new_start = self.start + size;
 		// Not enough space.
 		if new_start > self.end {
