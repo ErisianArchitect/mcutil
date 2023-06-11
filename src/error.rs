@@ -32,6 +32,8 @@ pub enum McError {
 	RegionAllocationFailure,
 	#[error("Region file is too small to contain a header.")]
 	InvalidRegionFile,
+	#[error("Parse Error: {0}")]
+	ParseError(#[from] crate::nbt::snbt::ParseError),
 }
 
 impl McError {
