@@ -26,19 +26,19 @@
 macro_rules! tag_info_table {
 	($macro:ident) => {
 		$macro! {
-//ID	Title			Type								[Implementation							]
-0001	Byte			i8									[$crate::nbt::family::Primitive			]
-0002	Short			i16									[$crate::nbt::family::NonBytePrimitive	]
-0003	Int				i32									[$crate::nbt::family::NonBytePrimitive	]
-0004	Long			i64									[$crate::nbt::family::NonBytePrimitive	]
-0005	Float			f32									[$crate::nbt::family::NonBytePrimitive	]
-0006	Double			f64									[$crate::nbt::family::NonBytePrimitive	]
-0007	ByteArray		std::vec::Vec::<i8>					[$crate::nbt::family::NonByte			]
-0008	String			std::string::String					[$crate::nbt::family::NonByte			]
-0009	List			$crate::nbt::tag::ListTag			[$crate::nbt::family::NonByte			]
-0010	Compound		$crate::nbt::Map					[$crate::nbt::family::NonByte			]
-0011	IntArray		std::vec::Vec::<i32>				[$crate::nbt::family::NonByte			]
-0012	LongArray		std::vec::Vec::<i64>				[$crate::nbt::family::NonByte			]
+//ID	Title		Type						[Implementation							]
+0001	Byte		i8							[$crate::nbt::family::Primitive			]
+0002	Short		i16							[$crate::nbt::family::NonBytePrimitive	]
+0003	Int			i32							[$crate::nbt::family::NonBytePrimitive	]
+0004	Long		i64							[$crate::nbt::family::NonBytePrimitive	]
+0005	Float		f32							[$crate::nbt::family::NonBytePrimitive	]
+0006	Double		f64							[$crate::nbt::family::NonBytePrimitive	]
+0007	ByteArray	std::vec::Vec::<i8>			[$crate::nbt::family::NonByte			]
+0008	String		std::string::String			[$crate::nbt::family::NonByte			]
+0009	List		$crate::nbt::tag::ListTag	[$crate::nbt::family::NonByte			]
+0010	Compound	$crate::nbt::Map			[$crate::nbt::family::NonByte			]
+0011	IntArray	std::vec::Vec::<i32>		[$crate::nbt::family::NonByte			]
+0012	LongArray	std::vec::Vec::<i64>		[$crate::nbt::family::NonByte			]
 		}
 	};
 }
