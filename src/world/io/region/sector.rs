@@ -15,6 +15,8 @@ use std::{
 	},
 };
 
+use super::prelude::ManagedSector
+
 /// Offset and size are packed together.
 /// Having these two values packed together saves 4KiB per RegionFile.
 /// It just seems a little wasteful to use more memory than is necessary.
@@ -117,6 +119,12 @@ impl RegionSector {
 			None
 		}
 	}
+}
+
+impl From<ManagedSector> for RegionSector {
+    fn from(value: ManagedSector) -> Self {
+        RegionSector::new(value.start, value.size() as u8)
+    }
 }
 
 macro_rules! __regionsector_impls {

@@ -25,11 +25,11 @@ use super::{
 pub struct SectorManager {
 	/// The unused sectors in a region file.
 	/// Expect that this might not be sorted.
-	unused_sectors: Vec<ManagedSector>,
+	pub(super) unused_sectors: Vec<ManagedSector>,
 	/// This represents all the occupyable space beyond all
 	/// used sectors.
 	/// This is where new or too large sectors will be allocated.
-	end_sector: ManagedSector,
+	pub(super) end_sector: ManagedSector,
 }
 
 impl SectorManager {
@@ -37,7 +37,7 @@ impl SectorManager {
 		Self {
 			unused_sectors: Vec::new(),
 			// Initialize the end_sector to the accessible range (24-bits).
-			end_sector: ManagedSector::new(2, 0x1000000),
+			end_sector: ManagedSector::new(2, u32::MAX),
 		}
 	}
 	/// Creates a new [SectorManager] with the specified unused sectors.
@@ -79,6 +79,14 @@ impl SectorManager {
 		self.unused_sectors.len()
 	}
 
+	/// Counts the number of unused 4KiB blocks. This is helpful for determining
+	/// if the region file needs to be optimized.
+	pub fn count_unused_blocks(&self) -> u32 {
+		self.unused_sectors.iter()
+			.map(|sect| sect.size())
+			.sum()
+	}
+
 	// TODO: I'm pretty sure that this will cause problems
 	//       if the given sector intersects with an unused sector.
 	//       It's best if you only supply RegionSectors supplied by
@@ -97,24 +105,42 @@ impl SectorManager {
 		// If, for example, this sector fills the space between two
 		// unused sectors, those sectors can become a single sector.
 		let mut freed_sector = ManagedSector::from(sector);
-		let mut left_neighbor: Option<usize> = None;
-		let mut right_neighbor: Option<usize> = None;
+		#[derive(Debug, Default)]
+		struct Finder {
+			left: Option<usize>,
+			right: Option<usize>,
+		}
+		let mut finder = Finder::default();
 		// Get neighboring unused sectors if they exist.
 		self.unused_sectors
 			.iter()
+			.map(|&s| s)
 			.enumerate()
-			// The .filter step feels a little extraneous.
-			// .filter(|(index, sector)| {
-			// 	sector.end == freed_sector.start 
-			// 	|| freed_sector.end == sector.start
-			// })
-			.for_each(|(index, sector)| {
-				// Check left side
-				if sector.end == freed_sector.start {
-					left_neighbor = Some(index);
-				// Check right side
-				} else if freed_sector.end == sector.start {
-					right_neighbor = Some(index);
+			.find_map(|(index, sector)| {
+				match (finder.left, finder.right) {
+					(None, Some(_)) => {
+						if sector.end == freed_sector.start {
+							finder.left = Some(index);
+							return Some(());
+						}
+						None
+					}
+					(Some(_), None) => {
+						if freed_sector.end == sector.start {
+							finder.right = Some(index);
+							return Some(());
+						}
+						None
+					}
+					(None, None) => {
+						if sector.end == freed_sector.start {
+							finder.left = Some(index);
+						} else if freed_sector.end == sector.start {
+							finder.right = Some(index);
+						}
+						None
+					}
+					_ => Some(())
 				}
 			});
 		// I'm using Vec::swap_remove to remove items, which
@@ -135,7 +161,7 @@ impl SectorManager {
 		// reduce the size of the collection by one. Then you could
 		// remove the item at index 1 and it would swap it with the
 		// item at the end (index 3 "Three").
-		match (left_neighbor, right_neighbor) {
+		match (finder.left, finder.right) {
 			(Some(left), Some(right)) => {
 				freed_sector.absorb(
 					self.unused_sectors.swap_remove(right.max(left))
@@ -168,36 +194,11 @@ impl SectorManager {
 		}
 	}
 
-	/// This will allocate a new sector, and if succesful, free the old one.
-	#[must_use]
-	pub fn reallocate_err(&mut self, free: RegionSector, new_size: u8) -> McResult<RegionSector> {
-		let result = self.allocate_err(new_size);
-		if result.is_ok() {
-			self.free(free);
-		}
-		result
-	}
-
-	/// This will allocate a new sector, and if successful, free the old one.
-	#[must_use]
-	pub fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
-		let result = self.allocate(new_size);
-		if result.is_some() {
-			self.free(free);
-		}
-		result
-	}
-
-	/// A version of allocate that returns a result rather than an option.
-	#[must_use]
-	pub fn allocate_err(&mut self, size: u8) -> McResult<RegionSector> {
-		self.allocate(size).ok_or(McError::RegionAllocationFailure)
-	}
-
 	/// Allocate a sector of a specified size.
 	#[must_use]
 	pub fn allocate(&mut self, size: u8) -> Option<RegionSector> {
-		self.unused_sectors.iter()
+		self.unused_sectors
+			.iter()
 			// Dereference the sector to satisfy borrow checker.
 			.map(|sector| *sector)
 			// We'll need the index of the found sector.
@@ -207,15 +208,14 @@ impl SectorManager {
 			.find(|(_, sector)| sector.size() >= (size as u32))
 			// If a sector is found, we can reduce the size of it by
 			// the requested size (removing it if the size becomes 0).
-			.and_then(|(index, mut sector)| {
-				let result = sector.allocate(size).unwrap();
-				if sector.is_empty() {
+			.and_then(|(index, sector)| {
+				let (new_sector, old_sector) = sector.split_left(size as u32).unwrap();
+				if old_sector.is_empty() {
 					self.unused_sectors.swap_remove(index);
 				} else {
-					self.unused_sectors[index] = sector;
+					self.unused_sectors[index] = old_sector.into();
 				}
-				// return
-				Some(result)
+				Some(RegionSector::from(new_sector))
 			})
 			// If there was no sector found of the appropriate size,
 			// create a new sector at the end and move the end_offset
@@ -225,11 +225,164 @@ impl SectorManager {
 				// space, we'll just call expect.
 				self.end_sector
 					.allocate(size)
-					// In the unlikely scenario that the SectorManager runs
-					// out of space, we'll just do this.
-					// .expect("The SectorManager's end_sector was not large enough for the allocation. This kind of failure should not happen.")
 			})
-			// .ok_or(crate::McError::RegionAllocationFailure)
+	}
+
+	/// This function will only cause the [SectorManager] to change its state if it succeeds in allocating a sector.
+	/// Failure is unlikely because you would need a ridiculously large file (which is possible, but unlikely).
+	/// This function does not check if the sector being freed is big enough to hold the requested size (hence the `unchecked`).
+	#[must_use]
+	#[inline(always)]
+	fn reallocate_unchecked(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
+		#[derive(Default)]
+		struct Finder {
+			left: Option<usize>,
+			right: Option<usize>,
+			alloc: Option<usize>,
+		}
+		let mut freed_sector = ManagedSector::from(free);
+		let mut finder = Finder::default();
+		/// Checks that the supplied option is none and that the condition is met.
+		/// If the conditions are met, the option is set to the supplied value.
+		/// Returns the result of the conditions.
+		#[inline(always)]
+		fn apply_some_cond<T>(opt: &mut Option<T>, condition: bool, value: T) -> bool {
+			if opt.is_none() && condition {
+				*opt = Some(value);
+				return true;
+			}
+			false
+		}
+		self.unused_sectors
+			.iter()
+			.map(|s| *s)
+			.enumerate()
+			.find_map(|(index, sector)| {
+				if apply_some_cond(&mut finder.alloc,	sector.size() >= (new_size as u32),	index)
+				|| apply_some_cond(&mut finder.left,	sector.end == freed_sector.start,	index)
+				|| apply_some_cond(&mut finder.right,	sector.start == freed_sector.end,	index) {
+					if let (Some(_), Some(_), Some(_)) = (finder.alloc, finder.left, finder.right) {
+						return Some(());
+					}
+				}
+				None
+			});
+		// In order to preserve state upon failure, I've created a temporary enum type to
+		// store values for success actions.
+		enum SuccessAction {
+			/// Replace the sector at index.
+			Replace(usize, ManagedSector),
+			/// Remove sector at index.
+			Remove(usize),
+			/// No action.
+			None,
+		}
+		finder.alloc.map(|index| {
+			let result = self.unused_sectors[index];
+			if result.size() > (new_size as u32) {
+				let (new, old) = result.split_left(new_size as u32).unwrap();
+				(
+					RegionSector::from(new),
+					SuccessAction::Replace(index, old)
+				)
+			} else {
+				(
+					RegionSector::from(result),
+					SuccessAction::Remove(index)
+				)
+			}
+		})
+		.or_else(|| {
+			self.end_sector
+				.allocate(new_size)
+				.map(|sector| (sector, SuccessAction::None))
+		})
+		.map(|(sector, action)| {
+			match (finder.left, finder.right) {
+				(Some(left), Some(right)) => {
+					freed_sector.absorb(
+						self.unused_sectors.swap_remove(right.max(left))
+					);
+					freed_sector.absorb(
+						self.unused_sectors.swap_remove(left.min(right))
+					);
+				}
+				(Some(index), None) => {
+					// You do not need to absorb the end sector, that is
+					// done in the next step.
+					freed_sector.absorb(
+						self.unused_sectors.swap_remove(index)
+					);
+				}
+				(None, Some(index)) => {
+					freed_sector.absorb(
+						self.unused_sectors.swap_remove(index)
+					);
+				}
+				_ => ()
+			}
+			if freed_sector.end >= self.end_sector.start {
+				self.end_sector.absorb(freed_sector);
+			} else {
+				self.unused_sectors.push(freed_sector);
+			}
+			match action {
+				SuccessAction::Replace(index, old) => {
+					self.unused_sectors[index] = old;
+				}
+				SuccessAction::Remove(index) => {
+					self.unused_sectors.swap_remove(index);
+				}
+				SuccessAction::None => ()
+			}
+			sector
+		})
+	}
+
+	/// This will allocate a new sector, and if successful (and necessary), free the old one.
+	/// This method will return the sector passed to it if the requested size is the same as
+	/// the size of the sector. If the new size is smaller than the requested sector, then
+	/// the new sector will be split from the old sector and the old sector will be freed.
+	/// Most sectors will be 1 block in size, so this function will probably return the
+	/// sector passed to it in most cases.
+	#[must_use]
+	pub fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
+		// There's no need to free the sector if there is no reallocation happening.
+		if new_size == 0 {
+			return None;
+		}
+		// We don't need to do an allocation if our freed sector is big enough to accomodate the new size.
+		if free.sector_count() >= (new_size as u64) {
+			// No need to reallocate.
+			if free.sector_count() == (new_size as u64) {
+				Some(free)
+			} else {
+				// Use split_left so that when the right side is freed, it can be absorbed
+				// into the end_sector if they are adjacent.
+				let (new, old) = free.split_left(new_size).unwrap();
+				self.free(old);
+				Some(new)
+			}
+		} else if free.is_empty() {
+			// The sector is empty, so there's nothing to free.
+			self.allocate(new_size)
+		} else {
+			self.reallocate_unchecked(free, new_size)
+		}
+	}
+
+	/// A version of allocate that returns a result rather than an option.
+	#[must_use]
+	#[inline(always)]
+	pub fn allocate_err(&mut self, size: u8) -> McResult<RegionSector> {
+		self.allocate(size).ok_or(McError::RegionAllocationFailure)
+	}
+
+	/// This will allocate a new sector, and if succesful, free the old one.
+	#[must_use]
+	#[inline(always)]
+	pub fn reallocate_err(&mut self, free: RegionSector, new_size: u8) -> McResult<RegionSector> {
+		self.reallocate(free, new_size).ok_or(McError::RegionAllocationFailure)
 	}
 }
 
@@ -312,7 +465,7 @@ impl<'a,T: ManagedSectorIteratorItem, It: IntoIterator<Item = T>> From<It> for S
 			// will be the caboose.
 			end_sector
 		) = filtered_sectors.into_iter()
-			.fold(initial_state,|(mut unused_sectors, previous), sector| {	
+			.fold(initial_state,|(mut unused_sectors, previous), sector| {
 				if let Some(_) = previous.gap(&sector) {
 					unused_sectors.push(ManagedSector::new(
 						previous.end,
@@ -331,58 +484,3 @@ impl<'a,T: ManagedSectorIteratorItem, It: IntoIterator<Item = T>> From<It> for S
 		}
 	}
 }
-
-// /// Create [SectorManager] from an Iterator.
-// impl<T: Into<ManagedSector>, It: IntoIterator<Item = T>> From<It> for SectorManager {
-// 	/// Try not to feed the [SectorManager] collections that
-// 	/// have intersecting sectors.
-//     fn from(value: It) -> Self {
-// 		use std::cmp::Ordering;
-// 		// Filter out empty sectors.
-// 		let mut filtered_sectors = value.into_iter()
-// 			.map(T::into)
-// 			.filter(ManagedSector::not_empty)
-// 			.collect::<Vec<ManagedSector>>();
-// 		// In order to measure the gap between sectors, they must
-// 		// be sorted.
-// 		filtered_sectors.sort_by(|a,b| {
-// 			if a.end <= b.start {
-// 				Ordering::Less
-// 			} else if b.end <= a.start {
-// 				Ordering::Greater
-// 			// Non-equal sectors can evaluate to equal.
-// 			} else {
-// 				Ordering::Equal
-// 			}
-// 		});
-// 		let initial_state = (
-// 			Vec::<ManagedSector>::new(),
-// 			// Initialized with the header sectors.
-// 			ManagedSector::header(),
-// 		);
-// 		// Collect unused sectors
-// 		let (
-// 			unused_sectors,
-// 			// Since the sectors are ordered, the last sector in the fold
-// 			// will be the caboose.
-// 			end_sector
-// 		) = filtered_sectors.into_iter()
-// 			.fold(initial_state,|(mut unused_sectors, previous), sector| {	
-// 				if let Some(_) = previous.gap(&sector) {
-// 					unused_sectors.push(ManagedSector::new(
-// 						previous.end,
-// 						sector.start
-// 					));
-// 				}
-// 				// Initialize the state for the next iteration.
-// 				( 
-// 					unused_sectors,
-// 					sector
-// 				)
-// 			});
-// 		Self { 
-// 			unused_sectors,
-// 			end_sector: ManagedSector::end_sector(end_sector.end)
-// 		}
-//     }
-// }
