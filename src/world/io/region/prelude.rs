@@ -7,7 +7,7 @@ pub use super::{
 	info::*,
 	coord::*,
 	compressionscheme::*,
-	reader::*,
-	writer::*,
 	regionfile::*,
+	// reader::*,
+	// writer::*,
 };
