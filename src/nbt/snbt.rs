@@ -498,6 +498,8 @@ pub enum ParseError {
 
 #[cfg(test)]
 mod tests {
+    use crate::McResult;
+
 
 	// The spookiest test of them all
 	#[cfg(test)]
@@ -599,9 +601,10 @@ mod tests {
 	
 	// TEMPORARY: DELETE ME!
 	#[test]
-	fn foo() {
+	fn foo() -> McResult<()> {
 		use super::*;
-		test_parse(r#"
+		use crate::measure_time;
+		let source = r#"
 			{
 				byte1 : 0b,
 				byte2 : -10b,
@@ -636,7 +639,13 @@ mod tests {
 					}
 				}
 			}
-		"#);
+		"#;
+		let elapsed = measure_time!{
+			let tag = Tag::parse(source)?;
+		};
+		println!("Elapsed: {elapsed:?}");
+		println!("{tag}");
+		Ok(())
 	}
 
 }
