@@ -65,6 +65,19 @@ eat_tokens!{table_macro_name[$];
 	}
 }
 
+eat_tokens!{
+	"test": "The quick brown fox jumps over the lazy dog.",
+	rabbit: {
+		id: "minecraft:rabbit",
+		x: 3.0,
+		y: 87.5,
+		z: 588.0,
+	},
+	items: [
+		${}
+	],
+}
+
 #[proc_macro]
 pub fn nbt(input: TokenStream) -> TokenStream {
 	
