@@ -38,6 +38,33 @@ macro_rules! make_table {
 	};
 }
 
+/// Measures the execution time of some set of instructions.
+#[macro_export]
+macro_rules! measure_time {
+	($($token:stmt)*) => {
+		{
+			let now = std::time::Instant::now();
+			$($token)*
+			now.elapsed()
+		}
+	};
+	(@;$expression:expr) => {
+		\
+	};
+}
+
+#[test]
+fn timetest() {
+	let time = measure_time!{
+		std::thread::sleep(std::time::Duration::from_secs(1));
+		#[derive(Debug)]
+		struct A {
+			name: String,
+		}
+		let a = A { name: "Test".into() };
+	};
+}
+
 /// The purpose of this macro is to be able to generate code for each
 /// primitive integer type (this means no f32 or f64).
 /// You invoke the macro with the path to another macro that you would
