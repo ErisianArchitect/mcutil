@@ -49,16 +49,6 @@ pub struct RegionFile {
 }
 
 impl RegionFile {
-	/// Makes sure that the file located at the path is a valid region file. (must exist and have a size >= 8192).
-	fn is_valid_region_file<P: AsRef<Path>>(path: P) -> McResult<bool> {
-		// TODO: Should I check that the region file is a multiple of 4096?
-		let path = path.as_ref();
-		// Must be file and the (length + 1) of the file must be large enough
-		// to fit the header (8192 bytes). There doesn't need to be any
-		// data beyond the header.
-		Ok(path.is_file() && path.metadata()?.len() >= (4096*2))
-	}
-
 	pub fn sectors(&self) -> &SectorTable {
 		&self.header.sectors
 	}
@@ -81,42 +71,62 @@ impl RegionFile {
 		self.header.timestamps[coord.index()]
 	}
 
+	/// Attempts to open a Minecraft region file at the given path, returning an error if it is not found.
+	pub fn open<P: AsRef<Path>>(path: P) -> McResult<Self> {
+		let path = path.as_ref();
+		let mut file_handle = File::options()
+			// Need to be able to read and write.
+			.read(true).write(true)
+			.open(path)?;
+		// Seek to the end to figure out the size of the file.
+		file_handle.seek(SeekFrom::End(0))?;
+		let file_size = file_handle.stream_position()?;
+		if file_size < 8192 {
+			// The size was too small to hold the header, which means it isn't
+			// a valid region file.
+			return Err(McError::InvalidRegionFile);
+		}
+		file_handle.seek(SeekFrom::Start(0))?;
+		let header = {				
+			let mut temp_reader = BufReader::new((&mut file_handle).take(4096*2));
+			RegionHeader::read_from(&mut temp_reader)?
+		};
+		let sector_manager = SectorManager::from(header.sectors.iter());
+		Ok(Self {
+			file_handle,
+			header,
+			sector_manager,
+			write_buf: Cursor::new(Vec::with_capacity(4096*2)),
+		})
+	}
+
+	/// Attempts to create a new Minecraft region file at the given path, returning an error if it already exists.
+	pub fn create<P: AsRef<Path>>(path: P) -> McResult<Self> {
+		let path = path.as_ref();
+		// Create region file with empty header.
+		let mut file_handle = File::options()
+			// Need to be able to read and write.
+			.read(true).write(true)
+			// The file doesn't exist, so we need to create it.
+			.create_new(true)
+			.open(path)?;
+		// Write an empty header since this is a new file.
+		file_handle.write_zeroes(4096*2)?;
+		Ok(Self {
+			file_handle,
+			write_buf: Cursor::new(Vec::with_capacity(4096*2)),
+			header: RegionHeader::default(),
+			sector_manager: SectorManager::new(),
+		})
+	}
+
 	/// Creates a new [RegionFile] object, opening or creating a Minecraft region file at the given path.
 	pub fn open_or_create<P: AsRef<Path>>(path: P) -> McResult<Self> {
 		let path = path.as_ref();
-		let write_buf = Cursor::new(Vec::with_capacity(4096*2));
-		if RegionFile::is_valid_region_file(path)? {
-			let mut file_handle = File::options()
-				// Need to be able to read and write.
-				.read(true).write(true)
-				.open(path)?;
-			let header = {				
-				let mut temp_reader = BufReader::new((&mut file_handle).take(4096*2));
-				RegionHeader::read_from(&mut temp_reader)?
-			};
-			let sector_manager = SectorManager::from(header.sectors.iter());
-			Ok(Self {
-				file_handle,
-				write_buf,
-				header,
-				sector_manager,
-			})
+		if path.is_file() {
+			Self::open(path)
 		} else {
-			// Create region file with empty header.
-			let mut file_handle = File::options()
-				// Need to be able to read and write.
-				.read(true).write(true)
-				// The file doesn't exist, so we need to create it.
-				.create(true)
-				.open(path)?;
-			// Write an empty header since this is a new file.
-			file_handle.write_zeroes(4096*2)?;
-			Ok(Self {
-				file_handle,
-				write_buf,
-				header: RegionHeader::default(),
-				sector_manager: SectorManager::new(),
-			})
+			Self::create(path)
 		}
 	}
 
@@ -153,21 +163,7 @@ impl RegionFile {
 		self.write_buf.write_value((length + 1) as u32)?;
 		// Allocation
 		let old_sector = self.header.sectors[coord.index()];
-		let new_sector = if required_sectors == (old_sector.sector_count() as u32) {
-			// If the data written takes up the same number of sectors as the old sector, then we can just use the old one.
-			old_sector
-		} else if required_sectors < (old_sector.sector_count() as u32) {
-			// If the required sectors are LESS than the old_sector's size, then we don't need to allocate a new sector,
-			// we can split our new one off from the old one and then free the old sector.
-			// It's safe to unwrap here because of the check in the if expression.
-			let (new_sector, old_sector) = old_sector.split_left(required_sectors as u8).unwrap();
-			self.sector_manager.free(old_sector);
-			new_sector
-		} else {
-			// We can't do anything with the old sector, so we'll just free it and allocate a new one.
-			// Thankfully I wrote this special nethod to do just that.
-			self.sector_manager.reallocate_err(old_sector, required_sectors as u8)?
-		};
+		let new_sector = self.sector_manager.reallocate_err(old_sector, required_sectors as u8)?;
 		// Writing to file
 		self.file_handle.seek(SeekFrom::Start(new_sector.offset()))?;
 		self.file_handle.write_all(self.write_buf.get_ref().as_slice())?;
@@ -232,12 +228,15 @@ impl RegionFile {
 	}
 
 	/// Deletes data from a region file (Returns the sector that was deleted).
+	/// This function does not delete the actual data from the region file, it only modifies
+	/// the header so that it appears as if the data doesn't exist.
 	pub fn delete_data<C: Into<RegionCoord>>(&mut self, coord: C) -> McResult<RegionSector> {
 		let coord: RegionCoord = coord.into();
 		let sector = self.header.sectors[coord.index()];
 		if sector.is_empty() {
 			return Ok(sector);
 		}
+		self.sector_manager.free(sector);
 		self.header.sectors[coord.index()] = RegionSector::default();
 		self.header.timestamps[coord.index()] = Timestamp::default();
 		// Clear the sector from the sector table
@@ -247,5 +246,11 @@ impl RegionFile {
 		self.file_handle.seek(coord.timestamp_table_offset())?;
 		self.file_handle.write_zeroes(4)?;
 		Ok(sector)
+	}
+
+	/// Removes all unused sectors from the region file, rearranging it so that it is optimized.
+	/// This is a costly operation, so it should only be performed when a region file 
+	pub fn optimize(&mut self) -> McResult<()> {
+		todo!()
 	}
 }
