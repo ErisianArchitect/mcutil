@@ -498,7 +498,7 @@ pub enum ParseError {
 
 #[cfg(test)]
 mod tests {
-    use crate::McResult;
+    use crate::{McResult, nbt::editable::EditableListTag};
 
 
 	// The spookiest test of them all
@@ -640,9 +640,10 @@ mod tests {
 				}
 			}
 		"#;
-		let elapsed = measure_time!{
-			let tag = Tag::parse(source)?;
-		};
+		use std::time::*;
+		let now = Instant::now();
+		let tag = Tag::parse(source)?;
+		let elapsed = now.elapsed();
 		println!("Elapsed: {elapsed:?}");
 		println!("{tag}");
 		Ok(())
