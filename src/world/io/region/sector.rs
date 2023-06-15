@@ -3,6 +3,7 @@ use crate::ioext::*;
 use crate::{
 	for_each_int_type,
 	McResult,
+	world::io::region::ManagedSector,
 };
 use std::{
 	io::{
@@ -14,8 +15,6 @@ use std::{
 		Not,
 	},
 };
-
-use super::prelude::ManagedSector
 
 /// Offset and size are packed together.
 /// Having these two values packed together saves 4KiB per RegionFile.
