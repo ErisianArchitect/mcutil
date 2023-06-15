@@ -4,7 +4,19 @@ This library is in active development, and as such I would not recommend using i
 
 # What is this?
 
-This is a library that I'm developing as part of a collection of tools I'm developing related to Minecraft. Tools such as an NBT editor, a full world editor, tools for optimizing region files, and whatever else I can imagine. This library will work as a sort of backend into the inner workings of Minecraft data. This includes Minecraft's region file format, NBT format, SNBT format, and perhaps even tools for working with the Minecraft .jar file itself.
+This is a library that acts as a bridge between Rust and Minecraft data. So this library will allow you to load, edit, and save NBT data, it will even allow you to edit Minecraft worlds. I would write more, but I haven't finished the library.
+
+# Current Capabilities:
+
+* NBT: Load, Edit, Save
+* Region Files: Load, Save, Optimize (not finished).
+* SNBT (JSON-like text-based NBT format) read/write
+
+# Plans:
+
+* Ability to open, edit, and save entire Minecraft worlds (past some specific version, otherwise having a converter to some internal format)
+* Tools based on this library, such as a full world editor that hopefully will have its own list of features and plans eventually.
+* NBT Editor: A tool that can be used to edit NBT files, or otherwise edit the extracted NBT from Region files.
 
 # What can it do?
 
