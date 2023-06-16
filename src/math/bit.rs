@@ -12,6 +12,23 @@ pub trait BitSize {
 	const BITSIZE: usize;
 }
 
+pub trait ShiftIndex {
+	/// A `u32` value that represents an index that a `1` bit can be shifted to.
+	fn shift_index(self) -> u32;
+}
+
+macro_rules! __shiftindex_impls {
+	($type:ty) => {
+		impl ShiftIndex for $type {
+			fn shift_index(self) -> u32 {
+				self as u32
+			}
+		}
+	};
+}
+
+for_each_int_type!(__shiftindex_impls);
+
 macro_rules! __bitsize_impls {
 	($type:ty) => {
 		impl BitSize for $type {
@@ -23,11 +40,11 @@ macro_rules! __bitsize_impls {
 for_each_int_type!(__bitsize_impls);
 
 pub trait SetBit {
-	fn set_bit(self, index: usize, on: bool) -> Self;
+	fn set_bit<I: ShiftIndex>(self, index: I, on: bool) -> Self;
 }
 
 pub trait GetBit {
-	fn get_bit(self, index: usize) -> bool;
+	fn get_bit<I: ShiftIndex>(self, index: I) -> bool;
 	fn get_bitmask(self, mask: Range<usize>) -> Self;
 }
 
@@ -35,12 +52,12 @@ macro_rules! __get_set_impl {
 	($type:ty) => {
 
 		impl SetBit for $type {
-			fn set_bit(self, index: usize, on: bool) -> Self {
-				if let (mask, false) = (1 as $type).overflowing_shl(index as u32) {
+			fn set_bit<I: ShiftIndex>(self, index: I, on: bool) -> Self {
+				if let (mask, false) = (1 as $type).overflowing_shl(index.shift_index()) {
 					if on {
-						self | (1 << index)
+						self | mask
 					} else {
-						self & !(1 << index)
+						self & !mask
 					}
 				} else {
 					self
@@ -49,8 +66,8 @@ macro_rules! __get_set_impl {
 		}
 
 		impl GetBit for $type {
-			fn get_bit(self, index: usize) -> bool {
-				if let (mask, false) = (1 as $type).overflowing_shl(index as u32) {
+			fn get_bit<I: ShiftIndex>(self, index: I) -> bool {
+				if let (mask, false) = (1 as $type).overflowing_shl(index.shift_index()) {
 					(self & mask) != 0
 				} else {
 					false
