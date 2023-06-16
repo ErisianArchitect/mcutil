@@ -245,22 +245,24 @@ impl SectorManager {
 		/// Checks that the supplied option is none and that the condition is met.
 		/// If the conditions are met, the option is set to the supplied value.
 		/// Returns the result of the conditions.
-		#[inline(always)]
-		fn apply_some_cond<T>(opt: &mut Option<T>, condition: bool, value: T) -> bool {
-			if opt.is_none() && condition {
-				*opt = Some(value);
-				return true;
-			}
-			false
+		macro_rules! apply_some_condition {
+			($opt:expr, $condition:expr, $value:expr) => {
+				if $opt.is_none() && ($condition) {
+					$opt = Some($value);
+					true
+				} else {
+					false
+				}
+			};
 		}
 		self.unused_sectors
 			.iter()
 			.map(|s| *s)
 			.enumerate()
 			.find_map(|(index, sector)| {
-				if apply_some_cond(&mut finder.alloc,	sector.size() >= (new_size as u32),	index)
-				|| apply_some_cond(&mut finder.left,	sector.end == freed_sector.start,	index)
-				|| apply_some_cond(&mut finder.right,	sector.start == freed_sector.end,	index) {
+				if apply_some_condition!(finder.alloc,	sector.size() >= (new_size as u32),	index)
+				|| apply_some_condition!(finder.left,	sector.end == freed_sector.start,	index)
+				|| apply_some_condition!(finder.right,	sector.start == freed_sector.end,	index) {
 					if let (Some(_), Some(_), Some(_)) = (finder.alloc, finder.left, finder.right) {
 						return Some(());
 					}
