@@ -12,7 +12,7 @@ pub trait BitSize {
 	const BITSIZE: usize;
 }
 
-pub trait ShiftIndex {
+pub trait ShiftIndex: Copy {
 	/// A `u32` value that represents an index that a `1` bit can be shifted to.
 	fn shift_index(self) -> u32;
 }
@@ -46,6 +46,17 @@ pub trait SetBit {
 pub trait GetBit {
 	fn get_bit<I: ShiftIndex>(self, index: I) -> bool;
 	fn get_bitmask(self, mask: Range<usize>) -> Self;
+}
+
+pub trait InvertBit {
+	fn invert_bit<I: ShiftIndex>(self, index: I) -> Self;
+}
+
+impl<T: GetBit + SetBit + Copy> InvertBit for T {
+	fn invert_bit<I: ShiftIndex>(self, index: I) -> Self {
+		let bit = self.get_bit(index);
+		self.set_bit(index, !bit)
+	}
 }
 
 macro_rules! __get_set_impl {
