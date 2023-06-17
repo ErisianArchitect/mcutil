@@ -26,3 +26,7 @@ Here's a short list of some of the things I'm hoping people will be able to crea
 * NBT editors.
 * World renderers.
 * I dunno, whatever the heck you want!
+
+# Collaboration?
+
+Currently, I am not looking for collaborators. This is a personal project that I'm doing for fun. You are welcome to fork this repo and add onto it however you please (in accordance with the attached license), but I do not wish to have anyone else mucking around in my codebase at this time. Perhaps at a later point when the project is finished I may open it up for collaboration to allow people to make my code better, but this is a project that I'm soloing out of some masochistic desire within myself.
