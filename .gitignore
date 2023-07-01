@@ -6,3 +6,4 @@
 # Specific files.
 go.bat
 minecraft
+__pycache__
