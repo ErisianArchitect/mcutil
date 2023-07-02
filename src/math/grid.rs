@@ -5,12 +5,13 @@ pub trait Grid {
 	type PointType;
 	type IndexType;
 
-	fn offset(&self) -> Self::PointType;
-	fn cell_size(&self) -> Self::PointType;
+	fn offset<RP: From<Self::PointType>>(&self) -> RP;
+	fn cell_size<RP: From<Self::PointType>>(&self) -> RP;
 
-	fn snap(&self, pos: Self::PointType) -> Self::PointType;
-	fn index(&self, pos: Self::PointType) -> Self::IndexType;
-	fn cell(&self, index: Self::IndexType) -> Self::PointType;
+	fn snap<P: Into<Self::PointType>, RP: From<Self::PointType>>(&self, pos: P) -> RP;
+	fn index<P: Into<Self::PointType>, RI: From<Self::IndexType>>(&self, pos: P) -> RI;
+	fn cell_min<I: Into<Self::IndexType>, RP: From<Self::PointType>>(&self, index: I) -> RP;
+	fn cell<I: Into<Self::IndexType>, RP: From<Self::PointType>, R: From<[RP; 2]>>(&self, index: I) -> R;
 }
 
 pub trait Grid2Index<T> {
@@ -177,8 +178,8 @@ pub struct BasicGrid<P> {
 
 impl<P> BasicGrid<P> {
 	#[inline(always)]
-	pub fn new(offset: P, cell_size: P) -> Self {
-		Self { offset, cell_size }
+	pub fn new<PP1: Into<P>, PP2: Into<P>>(offset: PP1, cell_size: PP2) -> Self {
+		Self { offset: offset.into(), cell_size: cell_size.into() }
 	}
 }
 
@@ -187,7 +188,7 @@ impl BasicGrid<(f32, f32)> {
 		Self::new((0.0, 0.0), (size, size))
 	}
 
-	pub fn offset_square(offset: (f32, f32), size: f32) -> Self {
+	pub fn offset_square<P: Into<(f32, f32)>>(offset: P, size: f32) -> Self {
 		Self::new(offset, (size, size))
 	}
 }
@@ -197,7 +198,7 @@ impl BasicGrid<(f32, f32, f32)> {
 		Self::new((0.0, 0.0, 0.0), (size, size, size))
 	}
 
-	pub fn offset_cubic(offset: (f32, f32, f32), size: f32) -> Self {
+	pub fn offset_cubic<P: Into<(f32, f32, f32)>>(offset: P, size: f32) -> Self {
 		Self::new(offset, (size, size, size))
 	}
 }
@@ -207,16 +208,17 @@ impl Grid for BasicGrid<(f32, f32)> {
 	type PointType = (f32, f32);
 
 	#[inline(always)]
-	fn offset(&self) -> Self::PointType {
-		self.offset
+	fn offset<RP: From<Self::PointType>>(&self) -> RP {
+		RP::from(self.offset)
 	}
 
 	#[inline(always)]
-	fn cell_size(&self) -> Self::PointType {
-		self.cell_size
+	fn cell_size<RP: From<Self::PointType>>(&self) -> RP {
+		RP::from(self.cell_size)
 	}
 
-	fn snap(&self, pos: Self::PointType) -> Self::PointType {
+	fn snap<P: Into<Self::PointType>, RP: From<Self::PointType>>(&self, pos: P) -> RP {
+		let pos = pos.into();
 		// In order to snap, first you must subtract the offset
 		// Then divrem width/height and subtract those values from pos (which has had offset subtracted from it)
 		// Then add offset back to the result
@@ -228,39 +230,52 @@ impl Grid for BasicGrid<(f32, f32)> {
 		let snap_mul_y = norm_snap_y * self.cell_size.y();
 		let result_x = snap_mul_x + self.offset.x();
 		let result_y = snap_mul_y + self.offset.y();
-		Self::PointType::create(result_x, result_y)
+		RP::from((result_x, result_y))
 	}
 
-	fn index(&self, pos: Self::PointType) -> Self::IndexType {
+	fn index<P: Into<Self::PointType>, RI: From<Self::IndexType>>(&self, pos: P) -> RI {
+		let pos = pos.into();
 		let norm_x = pos.x() - self.offset.x();
 		let norm_y = pos.y() - self.offset.y();
 		let ix = (norm_x / self.cell_size.x()).floor();
 		let iy = (norm_y / self.cell_size.y()).floor();
-		Self::PointType::index_point(ix, iy)
+		RI::from((ix as i32, iy as i32))
 	}
 
-	fn cell(&self, index: Self::IndexType) -> Self::PointType {
+	fn cell_min<I: Into<Self::IndexType>, RP: From<Self::PointType>>(&self, index: I) -> RP {
+		let index = index.into();
 		let index_point = Self::PointType::from_index(index);
 		let new_x = self.cell_size.x() * index_point.x() + self.offset.x();
 		let new_y = self.cell_size.y() * index_point.y() + self.offset.y();
-		Self::PointType::create(new_x, new_y)
+		RP::from((new_x, new_y))
+	}
+
+	fn cell<I: Into<Self::IndexType>, RP: From<Self::PointType>, R: From<[RP; 2]>>(&self, index: I) -> R {
+		let min: Self::PointType = self.cell_min(index);
+		let max = (
+			min.0 + self.cell_size.x(),
+			min.1 + self.cell_size.y()
+		);
+		R::from([RP::from(min), RP::from(max)])
 	}
 }
 
 impl Grid for BasicGrid<(f32, f32, f32)> {
     type IndexType = (i32, i32, i32);
 	type PointType = (f32, f32, f32);
+
 	#[inline(always)]
-	fn offset(&self) -> Self::PointType {
-		self.offset
+	fn offset<RP: From<Self::PointType>>(&self) -> RP {
+		RP::from(self.offset)
 	}
 
 	#[inline(always)]
-	fn cell_size(&self) -> Self::PointType {
-		self.cell_size
+	fn cell_size<RP: From<Self::PointType>>(&self) -> RP {
+		RP::from(self.cell_size)
 	}
 
-    fn snap(&self, pos: Self::PointType) -> Self::PointType {
+    fn snap<P: Into<Self::PointType>, RP: From<Self::PointType>>(&self, pos: P) -> RP {
+		let pos = pos.into();
         let norm_x = pos.x() - self.offset.x();
 		let norm_y = pos.y() - self.offset.y();
 		let norm_z = pos.z() - self.offset.z();
@@ -273,26 +288,38 @@ impl Grid for BasicGrid<(f32, f32, f32)> {
 		let result_x = snap_mul_x + self.offset.x();
 		let result_y = snap_mul_y + self.offset.y();
 		let result_z = snap_mul_z + self.offset.z();
-		Self::PointType::create(result_x, result_y, result_z)
+		RP::from((result_x, result_y, result_z))
     }
 
-    fn index(&self, pos: Self::PointType) -> Self::IndexType {
+    fn index<P: Into<Self::PointType>, RI: From<Self::IndexType>>(&self, pos: P) -> RI {
+		let pos = pos.into();
         let norm_x = pos.x() - self.offset.x();
 		let norm_y = pos.y() - self.offset.y();
 		let norm_z = pos.z() - self.offset.z();
 		let ix = (norm_x / self.cell_size.x()).floor();
 		let iy = (norm_y / self.cell_size.y()).floor();
 		let iz = (norm_z / self.cell_size.z()).floor();
-		Self::PointType::index_point(ix, iy, iz)
+		RI::from((ix as i32, iy as i32, iz as i32))
     }
 
-    fn cell(&self, index: Self::IndexType) -> Self::PointType {
+    fn cell_min<I: Into<Self::IndexType>, RP: From<Self::PointType>>(&self, index: I) -> RP {
+		let index = index.into();
         let index_point = Self::PointType::from_index(index);
 		let new_x = self.cell_size.x() * index_point.x() + self.offset.x();
 		let new_y = self.cell_size.y() * index_point.y() + self.offset.y();
 		let new_z = self.cell_size.z() * index_point.z() + self.offset.z();
-		Self::PointType::create(new_x, new_y, new_z)
+		RP::from((new_x, new_y, new_z))
     }
+
+	fn cell<I: Into<Self::IndexType>, RP: From<Self::PointType>, R: From<[RP; 2]>>(&self, index: I) -> R {
+		let min: Self::PointType = self.cell_min(index);
+		let max = (
+			min.0 + self.cell_size.x(),
+			min.1 + self.cell_size.y(),
+			min.2 + self.cell_size.z()
+		);
+		R::from([RP::from(min), RP::from(max)])
+	}
 }
 
 pub type BasicGrid2 = BasicGrid<(f32, f32)>;
