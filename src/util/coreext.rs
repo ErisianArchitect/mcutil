@@ -1,5 +1,17 @@
 //! Extensions to Rust core stuff, like bool, numerics, Result, Option, etc.
 
+pub trait OptionExtension<T> {
+	fn then<F: Fn(T)>(self, then: F);
+}
+
+impl<T> OptionExtension<T> for Option<T> {
+	fn then<F: Fn(T)>(self, then: F) {
+		if let Some(value) = self {
+			then(value);
+		}
+	}
+}
+
 pub trait BoolExtension: 'static {
 	fn choose<T>(self, _true: T, _false: T) -> T;
 	fn invert(&mut self) -> Self;
