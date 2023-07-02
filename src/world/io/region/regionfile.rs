@@ -11,6 +11,7 @@ use std::{
 	},
 	path::{
 		Path,
+		PathBuf,
 	},
 };
 
@@ -40,6 +41,7 @@ pub struct RegionFile {
 	sector_manager: SectorManager,
 	/// This file handle is for both reading and writing.
 	file_handle: File,
+	path: PathBuf,
 	/// Because the write size of a value sometimes can't quite be known until
 	/// after it has been written, it will be helpful to have a buffer to write
 	/// to before writing to the file. This will allow us to know exactly how
@@ -49,6 +51,10 @@ pub struct RegionFile {
 }
 
 impl RegionFile {
+	pub fn path(&self) -> &Path {
+		&self.path
+	}
+
 	pub fn sectors(&self) -> &SectorTable {
 		&self.header.sectors
 	}
@@ -97,6 +103,7 @@ impl RegionFile {
 			header,
 			sector_manager,
 			write_buf: Cursor::new(Vec::with_capacity(4096*2)),
+			path: path.to_owned(),
 		})
 	}
 
@@ -117,6 +124,7 @@ impl RegionFile {
 			write_buf: Cursor::new(Vec::with_capacity(4096*2)),
 			header: RegionHeader::default(),
 			sector_manager: SectorManager::new(),
+			path: path.to_owned(),
 		})
 	}
 
