@@ -3,7 +3,5 @@
 /ignore
 *.ignore
 *.ignore.*
-# Specific files.
-go.bat
-minecraft
 __pycache__
+# Specific files.
