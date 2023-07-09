@@ -48,9 +48,6 @@ macro_rules! measure_time {
 			now.elapsed()
 		}
 	};
-	// (@;$expression:expr) => {
-		
-	// };
 }
 
 #[test]
@@ -116,11 +113,8 @@ macro_rules! for_each_int_type {
 /// }
 #[macro_export]	
 macro_rules! continue_if {
-	($var:lifetime: $condition:expr) => {
-		if $condition { continue $var; }
-	};
-	($condition:expr) => {
-		if $condition { continue; }
+	($($label:lifetime : )? $condition:expr) => {
+		if $condition { continue $($label)?; }
 	};
 }
 
@@ -141,13 +135,19 @@ macro_rules! continue_if {
 /// 	}
 /// }
 /// ```
+/// And lastly, you can also include a return value:
+/// ```rs
+/// let mut i = 0;
+/// let result = loop {
+/// 	break_if!(i == 10 => 10);
+/// 	i += 1;
+/// };
+/// println!("Result: {result}");
+/// ```
 #[macro_export]	
 macro_rules! break_if {
-	($var:lifetime: $condition:expr) => {
-		if $condition { break $var; }
-	};
-	($condition:expr) => {
-		if $condition { break; }
+	($($label:lifetime:)? $condition:expr $(=> $result:expr)?) => {
+		if $condition { break $($label)? $($result)?; }
 	};
 }
 
@@ -162,11 +162,11 @@ macro_rules! break_if {
 /// ```
 /// Alternatively, you can also provide an expression to be returned:
 /// ```rs
-/// // return_if!(expr; condition)
+/// // return_if!(condition => expr)
 /// fn sample() -> (i32, i32) {
 /// 	for x in 0..32 {
 /// 		for y in 0..32 {
-/// 			return_if!((x,y); x + y == 40);
+/// 			return_if!(x + y == 40 => (x, y));
 /// 		}
 /// 	}
 /// 	(0, 0)
@@ -174,14 +174,9 @@ macro_rules! break_if {
 /// ```
 #[macro_export]
 macro_rules! return_if {
-	($result:expr; $condition:expr) => {
+	($condition:expr $(=> $result:expr)?) => {
 		if $condition {
-			return $result;
-		}
-	};
-	($condition:expr) => {
-		if $condition {
-			return;
+			return $($result)?;
 		}
 	};
 }
