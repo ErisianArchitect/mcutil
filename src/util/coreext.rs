@@ -1,11 +1,27 @@
 //! Extensions to Rust core stuff, like bool, numerics, Result, Option, etc.
 
+pub trait ResultExtension<T,E> {
+	// fn ok_err<R, OkFn: FnOnce(T) -> R, ErrFn: FnOnce(E) -> R>(self, ok: OkFn, err: ErrFn) -> R;
+}
+
+impl<T,E> ResultExtension<T,E> for Result<T,E> {
+	// This seemed like a good idea, but there are borrowing issues.
+	// Besides, Result already has mechanics to do this, you just
+	// need to use `.map` and `.else` or whatever.
+    // fn ok_err<R, OkFn: FnOnce(T) -> R, ErrFn: FnOnce(E) -> R>(self, ok: OkFn, err: ErrFn) -> R {
+	// 	match self {
+	// 		Ok(ok_value) => ok(ok_value),
+	// 		Err(err_value) => err(err_value),
+	// 	}
+	// }
+}
+
 pub trait OptionExtension<T> {
-	fn then<F: Fn(T)>(self, then: F);
+	fn then<F: FnOnce(T)>(self, then: F);
 }
 
 impl<T> OptionExtension<T> for Option<T> {
-	fn then<F: Fn(T)>(self, then: F) {
+	fn then<F: FnOnce(T)>(self, then: F) {
 		if let Some(value) = self {
 			then(value);
 		}
