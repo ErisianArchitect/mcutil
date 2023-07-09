@@ -16,6 +16,26 @@ use super::{
 	prelude::*,
 };
 
+pub trait SectorAllocator {
+	fn free(&mut self, sector: RegionSector);
+	#[must_use]
+	fn allocate(&mut self, size: u8) -> Option<RegionSector>;
+	#[must_use]
+	fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector>;
+
+	#[must_use]
+	#[inline(always)]
+	fn allocate_err(&mut self, size: u8) -> McResult<RegionSector> {
+		self.allocate(size).ok_or(McError::RegionAllocationFailure)
+	}
+
+	#[must_use]
+	#[inline(always)]
+	fn reallocate_err(&mut self, free: RegionSector, new_size: u8) -> McResult<RegionSector> {
+		self.reallocate(free, new_size).ok_or(McError::RegionAllocationFailure)
+	}
+}
+
 // TODO: Documentation on this sucks.
 /// Manages unused sectors in a region file so that
 /// a [RegionManager] can store chunks in a region file without
@@ -32,67 +52,15 @@ pub struct SectorManager {
 	pub(super) end_sector: ManagedSector,
 }
 
-impl SectorManager {
-	pub fn new() -> Self {
-		Self {
-			unused_sectors: Vec::new(),
-			// Initialize the end_sector to the accessible range (24-bits).
-			end_sector: ManagedSector::new(2, u32::MAX),
-		}
-	}
-	/// Creates a new [SectorManager] with the specified unused sectors.
-	/// Please provide only valid and non-empty sectors. Also, avoid
-	/// adding sectors that intersect. I'm putting a lot of trust into
-	/// you to not give this function bad data!
-	pub fn with_unused(end_sector: ManagedSector, unused_sectors: Vec<ManagedSector>) -> Self {
-		Self {
-			unused_sectors,
-			end_sector,
-		}
-	}
-
-	/// Reads the sector table from a region file and finds all unused
-	/// sectors, creating a new [SectorManager] instance in the process.
-	pub fn from_file(region_file: impl AsRef<Path>) -> McResult<Self> {
-		// Read the sector table from the file.
-		let sectors = {
-			let mut file = File::open(region_file.as_ref())?;
-			SectorTable::read_from(&mut file)?
-		};
-		Ok(SectorManager::from(sectors))
-	}
-
-	/// Creates a [SectorManager] from a [SectorTable].
-	pub fn from_table(table: &SectorTable) -> Self {
-		Self::from(table.iter())
-	}
-
-	pub fn unused_sectors(&self) -> &Vec<ManagedSector> {
-		&self.unused_sectors
-	}
-
-	pub fn end_sector(&self) -> &ManagedSector {
-		&self.end_sector
-	}
-
-	pub fn unused_count(&self) -> usize {
-		self.unused_sectors.len()
-	}
-
-	/// Counts the number of unused 4KiB blocks. This is helpful for determining
-	/// if the region file needs to be optimized.
-	pub fn count_unused_blocks(&self) -> u32 {
-		self.unused_sectors.iter()
-			.map(|sect| sect.size())
-			.sum()
-	}
+impl SectorAllocator for SectorManager {
+	
 
 	// TODO: I'm pretty sure that this will cause problems
 	//       if the given sector intersects with an unused sector.
 	//       It's best if you only supply RegionSectors supplied by
 	//       the same instance of a sector manager.
 	/// Frees a sector, allowing it to be reused.
-	pub fn free(&mut self, sector: RegionSector) {
+	fn free(&mut self, sector: RegionSector) {
 		// Early return if the sector is empty (nothing to free)
 		if sector.size() == 0 {
 			return;
@@ -196,7 +164,7 @@ impl SectorManager {
 
 	/// Allocate a sector of a specified size.
 	#[must_use]
-	pub fn allocate(&mut self, size: u8) -> Option<RegionSector> {
+	fn allocate(&mut self, size: u8) -> Option<RegionSector> {
 		self.unused_sectors
 			.iter()
 			// Dereference the sector to satisfy borrow checker.
@@ -226,6 +194,94 @@ impl SectorManager {
 				self.end_sector
 					.allocate(size)
 			})
+	}
+
+	/// This will allocate a new sector, and if successful (and necessary), free the old one.
+	/// This method will return the sector passed to it if the requested size is the same as
+	/// the size of the sector. If the new size is smaller than the requested sector, then
+	/// the new sector will be split from the old sector and the old sector will be freed.
+	/// Most sectors will be 1 block in size, so this function will probably return the
+	/// sector passed to it in most cases.
+	#[must_use]
+	fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
+		// There's no need to free the sector if there is no reallocation happening.
+		if new_size == 0 {
+			return None;
+		}
+		// We don't need to do an allocation if our freed sector is big enough to accomodate the new size.
+		if free.sector_count() >= (new_size as u64) {
+			// No need to reallocate.
+			if free.sector_count() == (new_size as u64) {
+				Some(free)
+			} else {
+				// Use split_left so that when the right side is freed, it can be absorbed
+				// into the end_sector if they are adjacent.
+				let (new, old) = free.split_left(new_size).unwrap();
+				self.free(old);
+				Some(new)
+			}
+		} else if free.is_empty() {
+			// The sector is empty, so there's nothing to free.
+			self.allocate(new_size)
+		} else {
+			self.reallocate_unchecked(free, new_size)
+		}
+	}
+}
+
+impl SectorManager {
+	pub fn new() -> Self {
+		Self {
+			unused_sectors: Vec::new(),
+			// Initialize the end_sector to the accessible range (24-bits).
+			end_sector: ManagedSector::new(2, u32::MAX),
+		}
+	}
+	/// Creates a new [SectorManager] with the specified unused sectors.
+	/// Please provide only valid and non-empty sectors. Also, avoid
+	/// adding sectors that intersect. I'm putting a lot of trust into
+	/// you to not give this function bad data!
+	pub fn with_unused(end_sector: ManagedSector, unused_sectors: Vec<ManagedSector>) -> Self {
+		Self {
+			unused_sectors,
+			end_sector,
+		}
+	}
+
+	/// Reads the sector table from a region file and finds all unused
+	/// sectors, creating a new [SectorManager] instance in the process.
+	pub fn from_file(region_file: impl AsRef<Path>) -> McResult<Self> {
+		// Read the sector table from the file.
+		let sectors = {
+			let mut file = File::open(region_file.as_ref())?;
+			SectorTable::read_from(&mut file)?
+		};
+		Ok(SectorManager::from(sectors))
+	}
+
+	/// Creates a [SectorManager] from a [SectorTable].
+	pub fn from_table(table: &SectorTable) -> Self {
+		Self::from(table.iter())
+	}
+
+	pub fn unused_sectors(&self) -> &Vec<ManagedSector> {
+		&self.unused_sectors
+	}
+
+	pub fn end_sector(&self) -> &ManagedSector {
+		&self.end_sector
+	}
+
+	pub fn unused_count(&self) -> usize {
+		self.unused_sectors.len()
+	}
+
+	/// Counts the number of unused 4KiB blocks. This is helpful for determining
+	/// if the region file needs to be optimized.
+	pub fn count_unused_blocks(&self) -> u32 {
+		self.unused_sectors.iter()
+			.map(|sect| sect.size())
+			.sum()
 	}
 
 	/// This function will only cause the [SectorManager] to change its state if it succeeds in allocating a sector.
@@ -339,52 +395,6 @@ impl SectorManager {
 			}
 			sector
 		})
-	}
-
-	/// This will allocate a new sector, and if successful (and necessary), free the old one.
-	/// This method will return the sector passed to it if the requested size is the same as
-	/// the size of the sector. If the new size is smaller than the requested sector, then
-	/// the new sector will be split from the old sector and the old sector will be freed.
-	/// Most sectors will be 1 block in size, so this function will probably return the
-	/// sector passed to it in most cases.
-	#[must_use]
-	pub fn reallocate(&mut self, free: RegionSector, new_size: u8) -> Option<RegionSector> {
-		// There's no need to free the sector if there is no reallocation happening.
-		if new_size == 0 {
-			return None;
-		}
-		// We don't need to do an allocation if our freed sector is big enough to accomodate the new size.
-		if free.sector_count() >= (new_size as u64) {
-			// No need to reallocate.
-			if free.sector_count() == (new_size as u64) {
-				Some(free)
-			} else {
-				// Use split_left so that when the right side is freed, it can be absorbed
-				// into the end_sector if they are adjacent.
-				let (new, old) = free.split_left(new_size).unwrap();
-				self.free(old);
-				Some(new)
-			}
-		} else if free.is_empty() {
-			// The sector is empty, so there's nothing to free.
-			self.allocate(new_size)
-		} else {
-			self.reallocate_unchecked(free, new_size)
-		}
-	}
-
-	/// A version of allocate that returns a result rather than an option.
-	#[must_use]
-	#[inline(always)]
-	pub fn allocate_err(&mut self, size: u8) -> McResult<RegionSector> {
-		self.allocate(size).ok_or(McError::RegionAllocationFailure)
-	}
-
-	/// This will allocate a new sector, and if succesful, free the old one.
-	#[must_use]
-	#[inline(always)]
-	pub fn reallocate_err(&mut self, free: RegionSector, new_size: u8) -> McResult<RegionSector> {
-		self.reallocate(free, new_size).ok_or(McError::RegionAllocationFailure)
 	}
 }
 
