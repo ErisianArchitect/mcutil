@@ -1,9 +1,7 @@
-use std::{
-	io::{
-		Read, Write,
-		BufWriter,
-		Seek, SeekFrom,
-	},
+use std::io::{
+	Read, Write,
+	BufWriter,
+	Seek, SeekFrom,
 };
 
 use crate::{

@@ -267,6 +267,7 @@ fn snbt_parser() -> impl Parser<SnbtToken, Tag, Error = Simple<SnbtToken>> {
 			$(
 				let $name = ($item)
 					.separated_by(just(SnbtToken::Comma))
+					.allow_trailing()
 					.delimited_by(just(SnbtToken::ArrayStart(ArrayType::$type)), just(SnbtToken::CloseBracket));
 			)+
 		};

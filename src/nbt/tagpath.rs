@@ -91,6 +91,12 @@ impl TagPath {
 	pub fn path(&self) -> &[TagPathPart] {
 		&self.0
 	}
+
+	pub fn join<T: Into<TagPathPart>>(&self, path: T) -> TagPath {
+		let mut parts = self.0.clone();
+		parts.push(path.into());
+		TagPath(parts)
+	}
 }
 
 impl FromStr for TagPath {

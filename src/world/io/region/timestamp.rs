@@ -1,9 +1,5 @@
 
-use std::{
-	io::{
-		Read, Write,
-	},
-};
+use std::io::{Read, Write};
 use chrono::{NaiveDateTime, DateTime, Utc};
 use crate::{
 	McResult,
@@ -17,11 +13,7 @@ pub struct Timestamp(u32);
 
 impl Timestamp {
 	pub fn to_datetime(&self) -> Option<DateTime<Utc>> {
-		if let Ok(result) = DateTime::<Utc>::try_from(*self) {
-			Some(result)
-		} else {
-			None
-		}
+		DateTime::<Utc>::try_from(*self).ok()
 	}
 
 	/// Get a [Timestamp] for the current time (in Utc).

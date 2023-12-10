@@ -1,6 +1,8 @@
+use crate::for_each_int_type;
 use crate::nbt::Map;
 use crate::nbt::tag::{
 	Tag,
+	TagID,
 	ListTag,
 	NbtType,
 };
@@ -17,3 +19,34 @@ pub type List<T> = Vec<T>;
 pub type Compound = Map;
 pub type IntArray = Vec<i32>;
 pub type LongArray = Vec<i64>;
+
+pub trait TypeId {
+	fn tag_id() -> TagID;
+}
+
+macro_rules! typeid_impls {
+	($($types:ty => $id:expr;)+) => {
+		$(
+			impl TypeId for $types {
+				fn tag_id() -> TagID {
+					$id
+				}
+			}
+		)+
+	};
+}
+
+typeid_impls!(
+	Byte => TagID::Byte;
+	Short => TagID::Short;
+	Int => TagID::Int;
+	Long => TagID::Long;
+	Float => TagID::Float;
+	Double => TagID::Double;
+	ByteArray => TagID::ByteArray;
+	String => TagID::String;
+	ListTag => TagID::List;
+	Compound => TagID::Compound;
+	IntArray => TagID::IntArray;
+	LongArray => TagID::LongArray;
+);

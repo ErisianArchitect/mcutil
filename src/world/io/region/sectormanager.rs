@@ -1,10 +1,6 @@
 use std::{
-	path::{
-		Path
-	},
-	fs::{
-		File,
-	},
+	path::Path,
+	fs::File, io::BufReader,
 };
 
 use crate::{
@@ -12,9 +8,7 @@ use crate::{
 	ioext::*,
 };
 
-use super::{
-	prelude::*,
-};
+use super::prelude::*;
 
 pub trait SectorAllocator {
 	fn free(&mut self, sector: RegionSector);
@@ -253,8 +247,8 @@ impl SectorManager {
 	pub fn from_file(region_file: impl AsRef<Path>) -> McResult<Self> {
 		// Read the sector table from the file.
 		let sectors = {
-			let mut file = File::open(region_file.as_ref())?;
-			SectorTable::read_from(&mut file)?
+			let mut reader = BufReader::new(File::open(region_file.as_ref())?);
+			SectorTable::read_from(&mut reader)?
 		};
 		Ok(SectorManager::from(sectors))
 	}
@@ -450,21 +444,11 @@ impl ManagedSectorIteratorItem for &ManagedSector {
 
 impl<'a,T: ManagedSectorIteratorItem, It: IntoIterator<Item = T>> From<It> for SectorManager {
 	fn from(value: It) -> Self {
-		use std::cmp::Ordering;
 		let mut filtered_sectors = value.into_iter()
 			.map(ManagedSectorIteratorItem::convert)
 			.filter(ManagedSector::not_empty)
 			.collect::<Vec<ManagedSector>>();
-		filtered_sectors.sort_by(|a,b| {
-			if a.end <= b.start {
-				Ordering::Less
-			} else if b.end <= a.start {
-				Ordering::Greater
-			// Non-equal sectors can evaluate to equal.
-			} else {
-				Ordering::Equal
-			}
-		});
+		filtered_sectors.sort();
 		let initial_state = (
 			Vec::<ManagedSector>::new(),
 			// Initialized with the header sectors.
@@ -490,7 +474,7 @@ impl<'a,T: ManagedSectorIteratorItem, It: IntoIterator<Item = T>> From<It> for S
 					sector
 				)
 			});
-		Self { 
+		Self {
 			unused_sectors,
 			end_sector: ManagedSector::end_sector(end_sector.end)
 		}

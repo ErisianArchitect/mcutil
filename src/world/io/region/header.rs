@@ -8,9 +8,7 @@ use super::timestamp::*;
 use super::coord::*;
 
 use std::{
-	fmt::{
-		Debug,
-	},
+	fmt::Debug,
 	io::{
 		Read, Write,
 		SeekFrom,

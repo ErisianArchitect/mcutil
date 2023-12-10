@@ -1,10 +1,6 @@
 use std::{
-	fs::{
-		File,
-	},
-	path::{
-		Path,
-	},
+	fs::File,
+	path::Path,
 	io::{
 		BufReader,
 		Read, Write,

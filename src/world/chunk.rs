@@ -7,8 +7,6 @@ use crate::nbt::*;
 use crate::nbt::io::*;
 use crate::nbt::tag::*;
 
-use crate::world::io::region_old::*;
-
 pub struct BlockStateProperty {
 	name: String,
 	value: String,
@@ -86,6 +84,10 @@ pub struct ChunkSection {
 	blocklight: Option<LightData>,
 }
 
+pub struct ChunkSections {
+	sections: Vec<ChunkSection>,
+}
+
 pub struct CarvingMasks {
 	air: Vec<i8>,
 	liquid: Vec<i8>,
@@ -102,20 +104,55 @@ pub fn get_coord_from_chunk_nbt(tag: &Tag) -> Option<(i32, i32)> {
 	None
 }
 
+impl DecodeNbt for Vec<ChunkSection> {
+	type Error = ();
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::List(ListTag::Compound(compounds)) = nbt {
+			let sections = compounds.into_iter().map(|section| {
+				ChunkSection {
+					y: todo!(),
+					block_states: todo!(),
+					biomes: todo!(),
+					skylight: todo!(),
+					blocklight: todo!(),
+				}
+			}).collect();
+			Ok(sections)
+		} else {
+			Err(())
+		}
+	}
+}
+
 // impl DecodeNbt for Chunk {
 //     type Error = ();
 
 //     fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-//         if let Tag::Compound(map) = nbt {
-// 			Ok(
-// 				Self {
-// 					data_version: 0,
-// 					x: i32::decode_nbt(*map.get("xPos").expect("xPos not found.")).expect("Failed to decode xPos."),
-// 					z: i32::decode_nbt(*map.get("zPos").expect("zPos not found.")).expect("Failed to decode zPos."),
-
-// 					..Default::default()
-// 				}
-// 			)
+// 		macro_rules! map_decoder {
+// 			($map:expr => $name:literal: $type:ty) => {
+// 				<$type>::decode_nbt(*$map.get($name).expect(&format!("{} not found.", $name))).expect(&format!("Failed to decode {}", $name))
+// 			};
+// 		}
+//         if let Tag::Compound(mut map) = nbt {
+// 			Ok(Self {
+// 				data_version: i32::decode_nbt(*map.get("data_version").expect("data_version not found.")).expect("Failed to decode data_version."),
+// 				x: i32::decode_nbt(*map.get("xPos").expect("xPos not found.")).expect("Failed to decode xPos."),
+// 				y: i32::decode_nbt(*map.get("zPos").expect("yPos not found.")).expect("Failed to decode yPos."),
+// 				z: i32::decode_nbt(*map.get("zPos").expect("zPos not found.")).expect("Failed to decode zPos."),
+// 				last_update: i64::decode_nbt(*map.get("last_update").expect("last_update not found.")).expect("Failed to decode last_update"),
+// 				sections: todo!(),
+// 				block_entities: todo!(),
+// 				carving_masks: todo!(),
+// 				heightmaps: todo!(),
+// 				lights: todo!(),
+// 				entities: todo!(),
+// 				fluid_ticks: todo!(),
+// 				block_ticks: todo!(),
+// 				post_processing: todo!(),
+// 				structures: todo!(),
+// 				inhabited_time: todo!(),
+// 			})
 // 		} else {
 // 			Err(())
 // 		}

@@ -133,8 +133,8 @@ macro_rules! __movebits_impls {
 for_each_int_type!(__movebits_impls);
 
 impl<T: BitSize + GetBit + SetBit + Copy> MoveBits for T {
-	fn move_bits<I: MoveBitsIteratorItem, It: IntoIterator<Item = I>>(self, new_indices: It) -> Self {
-		new_indices.into_iter()
+	fn move_bits<I: MoveBitsIteratorItem, It: IntoIterator<Item = I>>(self, source_indices: It) -> Self {
+		source_indices.into_iter()
 			.map(I::translate)
 			.enumerate()
 			.take(Self::BITSIZE)
@@ -149,7 +149,7 @@ impl<T: BitSize + GetBit + SetBit + Copy> MoveBits for T {
 fn move_bits_test() {
 	use super::*;// 76543210
 	let result = (0b10110001u32).move_bits([6, 3, 4, 7, 1, 0, 2, 5]);
-	println!("Result: {result}");
+	println!("Result: {result:08b}");
 }
 
 #[test]

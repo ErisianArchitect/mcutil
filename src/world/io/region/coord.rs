@@ -1,11 +1,5 @@
-use crate::{
-	for_each_int_type,
-};
-use std::{
-	io::{
-		SeekFrom,
-	}
-};
+use crate::for_each_int_type;
+use std::io::SeekFrom;
 
 /// A region file contains up to 1024 chunks, which is 32x32 chunks.
 /// This struct represents a chunk coordinate within a region file.

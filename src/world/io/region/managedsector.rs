@@ -1,10 +1,6 @@
-use std::{
-	ops::Range,
-};
+use std::ops::Range;
 
-use super::{
-	sector::*,
-};
+use super::sector::*;
 
 /// Similar to a RegionSector, but not constrained
 /// to only 256 chunks.
@@ -12,6 +8,24 @@ use super::{
 pub struct ManagedSector {
 	pub start: u32,
 	pub end: u32,
+}
+
+impl PartialOrd for ManagedSector {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.start.partial_cmp(&other.start) {
+            Some(core::cmp::Ordering::Equal) => self.end.partial_cmp(&other.end),
+            ord => ord,
+        }
+    }
+}
+
+impl Ord for ManagedSector {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.start.cmp(&other.start) {
+			core::cmp::Ordering::Equal => self.end.cmp(&other.end),
+			ord => ord,
+		}
+    }
 }
 
 impl From<Range<u32>> for ManagedSector{
