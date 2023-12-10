@@ -5,6 +5,7 @@ use crate::nbt::{
 	Map,
 	tag_info_table,
 };
+use crate::McError;
 
 use num_traits::ToPrimitive;
 use num_traits::Zero;
@@ -271,13 +272,13 @@ macro_rules! tag_code {
 			// so that you can avoid that clone, otherwise you can clone the tag yourself
 			// before decoding it.
 			impl DecodeNbt for $type {
-				type Error = ();
+				type Error = McError;
 				#[doc = "Attempts to decode the tag."]
-				fn decode_nbt(tag: Tag) -> Result<Self, ()> {
+				fn decode_nbt(tag: Tag) -> Result<Self, Self::Error> {
 					if let Tag::$title(tag) = tag {
 						return Ok(tag)
 					}
-					Err(())
+					Err(McError::NbtDecodeError)
 				}
 			}
 		)+
