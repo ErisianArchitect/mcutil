@@ -36,6 +36,8 @@ pub enum McError {
 	ParseError(#[from] crate::nbt::snbt::ParseError),
 	#[error("There was an error decoding the NBT Tag.")]
 	NbtDecodeError,
+	#[error("Tag was not found in Compound.")]
+	NotFoundInCompound(String),
 }
 
 impl McError {
@@ -51,6 +53,7 @@ impl McError {
 		}
 	}
 
+	#[inline(always)]
 	pub fn custom<T, S: AsRef<str>>(msg: S) -> Result<T,Self> {
 		Err(McError::Custom(msg.as_ref().to_owned()))
 	}
