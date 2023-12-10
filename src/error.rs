@@ -34,6 +34,8 @@ pub enum McError {
 	InvalidRegionFile,
 	#[error("Parse Error: {0}")]
 	ParseError(#[from] crate::nbt::snbt::ParseError),
+	#[error("There was an error decoding the NBT Tag.")]
+	NbtDecodeError,
 }
 
 impl McError {
