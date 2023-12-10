@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::default;
 
+use crate::McError;
 use crate::nbt::*;
 use crate::nbt::io::*;
 use crate::nbt::tag::*;
@@ -64,7 +65,7 @@ pub struct Chunk {
 	z: i32,
 	last_update: i64,
 	inhabited_time: i64,
-	sections: Vec<ChunkSection>,
+	sections: ChunkSections,
 	block_entities: Vec<Map>,
 	carving_masks: CarvingMasks,
 	heightmaps: HeightMaps,
@@ -125,36 +126,70 @@ impl DecodeNbt for Vec<ChunkSection> {
 	}
 }
 
-// impl DecodeNbt for Chunk {
-//     type Error = ();
+impl DecodeNbt for ChunkSection {
+	type Error = McError;
 
-//     fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-// 		macro_rules! map_decoder {
-// 			($map:expr => $name:literal: $type:ty) => {
-// 				<$type>::decode_nbt(*$map.get($name).expect(&format!("{} not found.", $name))).expect(&format!("Failed to decode {}", $name))
-// 			};
-// 		}
-//         if let Tag::Compound(mut map) = nbt {
-// 			Ok(Self {
-// 				data_version: i32::decode_nbt(*map.get("data_version").expect("data_version not found.")).expect("Failed to decode data_version."),
-// 				x: i32::decode_nbt(*map.get("xPos").expect("xPos not found.")).expect("Failed to decode xPos."),
-// 				y: i32::decode_nbt(*map.get("zPos").expect("yPos not found.")).expect("Failed to decode yPos."),
-// 				z: i32::decode_nbt(*map.get("zPos").expect("zPos not found.")).expect("Failed to decode zPos."),
-// 				last_update: i64::decode_nbt(*map.get("last_update").expect("last_update not found.")).expect("Failed to decode last_update"),
-// 				sections: todo!(),
-// 				block_entities: todo!(),
-// 				carving_masks: todo!(),
-// 				heightmaps: todo!(),
-// 				lights: todo!(),
-// 				entities: todo!(),
-// 				fluid_ticks: todo!(),
-// 				block_ticks: todo!(),
-// 				post_processing: todo!(),
-// 				structures: todo!(),
-// 				inhabited_time: todo!(),
-// 			})
-// 		} else {
-// 			Err(())
-// 		}
-//     }
-// }
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::Compound(map) = nbt {
+			todo!()
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
+impl DecodeNbt for ChunkSections {
+	type Error = McError;
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::List(ListTag::Compound(sections)) = nbt {
+			Ok(Self {
+				sections: sections.into_iter().map(|section| {
+					Ok(ChunkSection {
+						y: todo!(),
+						block_states: todo!(),
+						biomes: todo!(),
+						skylight: todo!(),
+						blocklight: todo!(),
+					})
+				}).collect::<Result<Vec<ChunkSection>, McError>>()?,
+			})
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
+impl DecodeNbt for Chunk {
+    type Error = McError;
+
+    fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		macro_rules! map_decoder {
+			($map:expr; $name:literal -> $type:ty) => {
+				<$type>::decode_nbt($map.remove($name).ok_or(McError::NotFoundInCompound($name.to_owned()))?)?
+			};
+		}
+        if let Tag::Compound(mut map) = nbt {
+			Ok(Self {
+				data_version: map_decoder!(map; "data_version" -> i32),
+				x: map_decoder!(map; "xPos" -> i32),
+				y: map_decoder!(map; "yPos" -> i32),
+				z: map_decoder!(map; "zPos" -> i32),
+				last_update: map_decoder!(map; "last_update" -> i64),
+				sections: todo!(),
+				block_entities: todo!(),
+				carving_masks: todo!(),
+				heightmaps: todo!(),
+				lights: todo!(),
+				entities: todo!(),
+				fluid_ticks: todo!(),
+				block_ticks: todo!(),
+				post_processing: todo!(),
+				structures: todo!(),
+				inhabited_time: todo!(),
+			})
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+    }
+}
