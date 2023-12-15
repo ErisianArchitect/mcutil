@@ -3,6 +3,10 @@
 */
 
 use std::collections::HashMap;
+use super::{
+	blockregistry::BlockRegistry,
+	blockstate::*,
+};
 
 // 32x32 chunks
 struct JavaRegion {
@@ -10,7 +14,8 @@ struct JavaRegion {
 }
 
 struct JavaWorld<Ct> {
-	chunks: HashMap<(i32, i32), Ct>, 
+	block_registry: BlockRegistry,
+	chunks: HashMap<(i32, i32), Ct>,
 }
 
 /*
