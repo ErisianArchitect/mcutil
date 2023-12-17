@@ -14,6 +14,12 @@ use super::{
 };
 
 pub type CoordTup = (i32, i32);
+#[derive(Debug, Hash, PartialEq, Eq)]
+pub enum Dimension {
+	Overworld,
+	Nether,
+	Other(String),
+}
 
 // 32x32 chunks
 // struct JavaRegion {
@@ -29,8 +35,8 @@ pub trait ChunkManager<T: Sized>: Sized {
 
 pub struct JavaWorld<Ct, M: ChunkManager<Ct> + Sized> {
 	pub block_registry: BlockRegistry,
-	pub chunks: HashMap<(i32, i32), Ct>,
-	pub regions: HashMap<(i32, i32), RegionFile>,
+	pub chunks: HashMap<(i32, i32, Dimension), Ct>,
+	pub regions: HashMap<(i32, i32, Dimension), RegionFile>,
 	directory: PathBuf,
 	_m: PhantomData<M>,
 }
