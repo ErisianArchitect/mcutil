@@ -28,10 +28,10 @@ pub enum Dimension {
 // }
 
 pub trait ChunkManager<T: Sized>: Sized {
-	fn load_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
-	fn save_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
+	fn load_chunk(block_registry: &mut BlockRegistry, coord: CoordTup) -> McResult<()>;
+	fn save_chunk(block_registry: &BlockRegistry, coord: CoordTup) -> McResult<()>;
 	/// Do not handle the removing of chunks from JavaWorld
-	fn unload_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
+	fn unload_chunk(coord: CoordTup) -> McResult<()>;
 }
 
 pub struct JavaWorld<Ct, M: ChunkManager<Ct>> {
@@ -59,15 +59,15 @@ impl<Ct, M: ChunkManager<Ct>> JavaWorld<Ct, M> {
 
 impl<M: ChunkManager<Chunk>> JavaWorld<Chunk, M> {
 	pub fn load_chunk(&mut self, coord: CoordTup) -> McResult<()> {
-		M::load_chunk(self, coord)
+		M::load_chunk(&mut self.block_registry, coord)
 	}
 
 	pub fn save_chunk(&mut self, coord: CoordTup) -> McResult<()> {
-		M::save_chunk(self, coord)
+		M::save_chunk(&mut self.block_registry, coord)
 	}
 
 	pub fn unload_chunk(&mut self, coord: CoordTup) -> McResult<()> {
-		M::unload_chunk(self, coord)
+		M::unload_chunk(coord)
 	}
 }
 
