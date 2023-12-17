@@ -1,21 +1,63 @@
 /*
 
 */
+#![allow(unused)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData};
+use crate::{McResult, McError};
+
 use super::{
 	blockregistry::BlockRegistry,
 	blockstate::*,
+	chunk::Chunk,
+	io::region::RegionFile,
 };
 
-// 32x32 chunks
-struct JavaRegion {
+pub type CoordTup = (i32, i32);
 
+// 32x32 chunks
+// struct JavaRegion {
+
+// }
+
+pub trait ChunkManager<T: Sized>: Sized {
+	fn load_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
+	fn save_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
+	/// Do not handle the removing of chunks from JavaWorld
+	fn unload_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
 }
 
-struct JavaWorld<Ct> {
-	block_registry: BlockRegistry,
-	chunks: HashMap<(i32, i32), Ct>,
+pub struct JavaWorld<Ct, M: ChunkManager<Ct> + Sized> {
+	pub block_registry: BlockRegistry,
+	pub chunks: HashMap<(i32, i32), Ct>,
+	pub regions: HashMap<(i32, i32), RegionFile>,
+	directory: PathBuf,
+	_m: PhantomData<M>,
+}
+
+impl<Ct, M: ChunkManager<Ct> + Sized> JavaWorld<Ct, M> {
+	pub fn open<P: AsRef<Path>>(directory: P) -> McResult<Self> {
+		let directory = directory.as_ref().to_owned();
+		if directory.is_dir() {
+			todo!()
+		} else {
+			Err(McError::WorldDirectoryNotFound(directory))
+		}
+	}
+
+	pub fn save(&mut self) -> McResult<()> {
+		todo!()
+	}
+}
+
+impl<M: ChunkManager<Chunk>> JavaWorld<Chunk, M> {
+	pub fn load_chunk(&mut self, coord: CoordTup) -> McResult<()> {
+		M::load_chunk(self, coord)
+	}
+
+	pub fn save_chunk(&mut self, coord: CoordTup) -> McResult<()> {
+		M::save_chunk(self, coord)
+	}
 }
 
 /*
