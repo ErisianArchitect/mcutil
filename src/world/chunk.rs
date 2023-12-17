@@ -92,47 +92,47 @@ impl DecodeNbt for Heightmaps {
 
 pub struct Chunk {
 	/// DataVersion
-	data_version: i32,
+	pub data_version: i32,
 	/// xPos
-	x: i32,
+	pub x: i32,
 	/// yPos
-	y: i32,
+	pub y: i32,
 	/// zPos
-	z: i32,
+	pub z: i32,
 	/// LastUpdate
-	last_update: i64,
+	pub last_update: i64,
 	/// Status
-	status: String,
+	pub status: String,
 	/// sections
-	sections: ChunkSections,
+	pub sections: ChunkSections,
 	/// block_entities
-	block_entities: Vec<BlockEntity>,
+	pub block_entities: Vec<BlockEntity>,
 	/// CarvingMasks
-	carving_masks: CarvingMasks,
+	pub carving_masks: CarvingMasks,
 	/// HeightMaps
-	heightmaps: Heightmaps,
+	pub heightmaps: Heightmaps,
 	/// fluid_ticks
-	fluid_ticks: ListTag,
+	pub fluid_ticks: ListTag,
 	/// block_ticks
-	block_ticks: ListTag,
+	pub block_ticks: ListTag,
 	/// InhabitedTime
-	inhabited_time: i64,
+	pub inhabited_time: i64,
 	/// PostProcessing
-	post_processing: ListTag,
+	pub post_processing: ListTag,
 	/// structures
-	structures: Map,
+	pub structures: Map,
 	/// Lights
-	lights: Option<ListTag>,
+	pub lights: Option<ListTag>,
 	/// Entities
-	entities: Option<ListTag>,
+	pub entities: Option<ListTag>,
 }
 
 pub struct ChunkSection {
-	y: i8,
-	blocks: Option<Box<[u32]>>,
-	biomes: Option<Map>,
-	skylight: Option<Vec<i8>>,
-	blocklight: Option<Vec<i8>>,
+	pub y: i8,
+	pub blocks: Option<Box<[u32]>>,
+	pub biomes: Option<Map>,
+	pub skylight: Option<Vec<i8>>,
+	pub blocklight: Option<Vec<i8>>,
 }
 
 pub struct ChunkSections {
@@ -174,7 +174,7 @@ impl DecodeNbt for Vec<BlockEntity> {
 	type Error = McError;
 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
 		if let Tag::List(ListTag::Compound(entities)) = nbt {
-			Ok(entities.into_iter().map(|mut entity| {
+			entities.into_iter().map(|mut entity| {
 				Ok(BlockEntity {
 					id: map_decoder!(entity; "id" -> String),
 					keep_packed: map_decoder!(entity; "keepPacked" -> i8),
@@ -183,7 +183,7 @@ impl DecodeNbt for Vec<BlockEntity> {
 					z: map_decoder!(entity; "z" -> i32),
 					data: entity,
 				})
-			}).collect::<Result<Vec<BlockEntity>, McError>>()?)
+			}).collect::<Result<Vec<BlockEntity>, McError>>()
 		} else {
 			Err(McError::NbtDecodeError)
 		}
