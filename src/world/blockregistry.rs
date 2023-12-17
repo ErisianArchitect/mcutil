@@ -22,6 +22,15 @@ pub struct BlockRegistry {
 }
 
 impl BlockRegistry {
+	pub fn new() -> Self {
+		let air = BlockState::new("minecraft:air", BlockProperties::none());
+		Self {
+			ids: HashMap::from([(air.clone(), 0)]),
+			states: HashMap::from([(0, air)]),
+			counter: AtomicU32::new(1),
+		}
+	}
+
 	/// Registers a [BlockState] with the registry and returns the ID.
 	/// The returned ID can be used to acquire a [BlockState].
 	pub fn register(&mut self, state: &BlockState) -> u32 {
