@@ -14,6 +14,7 @@ use super::{
 };
 
 pub type CoordTup = (i32, i32);
+
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub enum Dimension {
 	Overworld,
@@ -33,7 +34,7 @@ pub trait ChunkManager<T: Sized>: Sized {
 	fn unload_chunk(world: &mut JavaWorld<T, Self>, coord: CoordTup) -> McResult<()>;
 }
 
-pub struct JavaWorld<Ct, M: ChunkManager<Ct> + Sized> {
+pub struct JavaWorld<Ct, M: ChunkManager<Ct>> {
 	pub block_registry: BlockRegistry,
 	pub chunks: HashMap<(i32, i32, Dimension), Ct>,
 	pub regions: HashMap<(i32, i32, Dimension), RegionFile>,
@@ -41,7 +42,7 @@ pub struct JavaWorld<Ct, M: ChunkManager<Ct> + Sized> {
 	_m: PhantomData<M>,
 }
 
-impl<Ct, M: ChunkManager<Ct> + Sized> JavaWorld<Ct, M> {
+impl<Ct, M: ChunkManager<Ct>> JavaWorld<Ct, M> {
 	pub fn open<P: AsRef<Path>>(directory: P) -> McResult<Self> {
 		let directory = directory.as_ref().to_owned();
 		if directory.is_dir() {
