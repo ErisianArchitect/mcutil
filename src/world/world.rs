@@ -65,6 +65,10 @@ impl<M: ChunkManager<Chunk>> JavaWorld<Chunk, M> {
 	pub fn save_chunk(&mut self, coord: CoordTup) -> McResult<()> {
 		M::save_chunk(self, coord)
 	}
+
+	pub fn unload_chunk(&mut self, coord: CoordTup) -> McResult<()> {
+		M::unload_chunk(self, coord)
+	}
 }
 
 /*
