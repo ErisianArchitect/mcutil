@@ -1,6 +1,8 @@
 
 
 
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 /// The master error type.
@@ -38,6 +40,8 @@ pub enum McError {
 	NbtDecodeError,
 	#[error("Tag was not found in Compound.")]
 	NotFoundInCompound(String),
+	#[error("World Directory not found. {0}")]
+	WorldDirectoryNotFound(PathBuf),
 }
 
 impl McError {
