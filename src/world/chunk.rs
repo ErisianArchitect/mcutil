@@ -6,6 +6,7 @@ use std::default;
 use super::blockstate::*;
 
 use crate::McError;
+use crate::McResult;
 use crate::math::bit::BitLength;
 use crate::nbt::*;
 use crate::nbt::io::*;
@@ -24,6 +25,9 @@ use super::world::*;
 /// let option: Option<Byte> = map_decoder!(map; "some tag" -> Option<Byte>);
 /// ```
 macro_rules! map_decoder {
+	($map:expr; $name:literal) => {
+		$map.remove($name).ok_or(McError::NbtDecodeError)?
+	};
 	($map:expr; $name:literal -> Option<$type:ty>) => {
 		if let Some(tag) = $map.remove($name) {
 			Some(<$type>::decode_nbt(tag)?)
@@ -77,13 +81,32 @@ pub struct TileTick {
 	z: i32,
 }
 
-pub struct HeightMaps {
+pub struct Heightmaps {
 	motion_blocking: Vec<i64>,
 	motion_blocking_no_leaves: Vec<i64>,
 	ocean_floor: Vec<i64>,
 	ocean_floor_wg: Vec<i64>,
 	world_surface: Vec<i64>,
 	world_surface_wg: Vec<i64>,
+}
+
+impl DecodeNbt for Heightmaps {
+	type Error = McError;
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::Compound(mut map) = nbt {
+			Ok(Heightmaps {
+				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Vec<i64>),
+				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Vec<i64>),
+				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Vec<i64>),
+				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Vec<i64>),
+				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Vec<i64>),
+				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Vec<i64>),
+			})
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
 }
 
 pub struct Chunk {
@@ -106,21 +129,21 @@ pub struct Chunk {
 	/// CarvingMasks
 	carving_masks: CarvingMasks,
 	/// HeightMaps
-	heightmaps: HeightMaps,
-	/// Lights
-	lights: ListTag,
-	/// Entities
-	entities: ListTag,
+	heightmaps: Heightmaps,
 	/// fluid_ticks
-	fluid_ticks: Vec<Map>,
+	fluid_ticks: ListTag,
 	/// block_ticks
-	block_ticks: Vec<Map>,
+	block_ticks: ListTag,
 	/// InhabitedTime
 	inhabited_time: i64,
 	/// PostProcessing
-	post_processing: Vec<ListTag>,
+	post_processing: ListTag,
 	/// structures
 	structures: Map,
+	/// Lights
+	lights: Option<ListTag>,
+	/// Entities
+	entities: Option<ListTag>,
 }
 
 pub struct ChunkSection {
@@ -138,6 +161,23 @@ pub struct ChunkSections {
 pub struct CarvingMasks {
 	air: Vec<i8>,
 	liquid: Vec<i8>,
+}
+
+impl DecodeNbt for CarvingMasks {
+	type Error = McError;
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::Compound(mut map) = nbt {
+			let air = map_decoder!(map; "AIR" -> Vec<i8>);
+			let liquid = map_decoder!(map; "LIQUID" -> Vec<i8>);
+			Ok(CarvingMasks {
+				air,
+				liquid,
+			})
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
 }
 
 pub struct BlockEntity {
@@ -301,18 +341,26 @@ pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) 
 
 pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> Result<ChunkSection, McError> {
 	let y = map_decoder!(section; "Y" -> Byte);
+	// The following three may or may not exist.
 	let biomes = map_decoder!(section; "biomes" -> Option<Map>);
 	let blocklight = map_decoder!(section; "BlockLight" -> Option<ByteArray>);
 	let skylight = map_decoder!(section; "SkyLight" -> Option<ByteArray>);
 
 	let mut block_states = map_decoder!(section; "block_states" -> Map);
 
+	// Now I need to transform the block_data and palette into registry IDs.
+	// The ending block_data should contain 4096 u32 values representing their IDs in
+	// the registry. So I need to register each BlockState in the palette with the
+	// registry, retrieving the ID. I think the appropriate way to do this would be
+	// to do an iterator map to the block_registry IDs.
 	let palette = decode_palette(map_decoder!(block_states; "palette" -> ListTag))?;
+	// Register blocks.
 	let palette = palette.into_iter()
 		.map(|state| {
 			block_registry.register(&state)
 		}).collect::<Vec<u32>>();
-	let block_data = if block_states.contains_key("data") {
+	let blocks = if block_states.contains_key("data") {
+		// Extract indices from packed values.
 		let data = map_decoder!(block_states; "data" -> LongArray);
 		let data = (0..4096).into_iter().map(|full_index| {
 			let index = extract_palette_index(full_index, palette.len(), data.as_slice());
@@ -322,15 +370,18 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 	} else {
 		None
 	};
-	// Now I need to transform the block_data and palette into registry IDs.
-	// The ending block_data should contain 4096 u32 values representing their IDs in
-	// the registry. So I need to register each BlockState in the palette with the
-	// registry, retrieving the ID. I think the appropriate way to do this would be
-	// to do an iterator map to the block_registry IDs.
-	todo!()
+	Ok(ChunkSection {
+		y,
+		biomes,
+		blocklight,
+		skylight,
+		blocks,
+	})
+	
+	// todo!()
 }
 
-pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> Result<Chunk, McError> {
+pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Chunk> {
 	if let Tag::Compound(mut map) = nbt {
 		
 		if let Tag::List(ListTag::Compound(mut sections)) = map.remove("sections").ok_or(McError::NotFoundInCompound("sections".to_owned()))? {
@@ -340,25 +391,34 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> Result<Chun
 		} else {
 			return Err(McError::NbtDecodeError)
 		}
+		let sections = if let ListTag::Compound(sections) = map_decoder!(map; "sections" -> ListTag) {
+			sections.into_iter()
+				.map(|section| decode_section(block_registry, section))
+				.collect::<McResult<Vec<ChunkSection>>>()?
+		} else {
+			return Err(McError::NbtDecodeError);
+		};
+		let sections = ChunkSections {
+			sections,
+		};
 		Ok(Chunk {
+			sections,
 			data_version: map_decoder!(map; "DataVersion" -> i32),
 			x: map_decoder!(map; "xPos" -> i32),
 			y: map_decoder!(map; "yPos" -> i32),
 			z: map_decoder!(map; "zPos" -> i32),
 			last_update: map_decoder!(map; "LastUpdate" -> i64),
-			// sections: map_decoder!(map; "sections" -> ChunkSections),
-			sections: todo!(),
 			block_entities: map_decoder!(map; "block_entities" -> Vec<BlockEntity>),
-			carving_masks: todo!(),
-			heightmaps: todo!(),
-			lights: todo!(),
-			entities: todo!(),
-			fluid_ticks: todo!(),
-			block_ticks: todo!(),
-			post_processing: todo!(),
-			structures: todo!(),
-			inhabited_time: todo!(),
-			status: todo!(),
+			carving_masks: map_decoder!(map; "CarvingMasks" -> CarvingMasks),
+			heightmaps: map_decoder!(map; "Heightmaps" -> Heightmaps),
+			fluid_ticks: map_decoder!(map; "fluid_ticks" -> ListTag),
+			block_ticks: map_decoder!(map; "block_ticks" -> ListTag),
+			post_processing: map_decoder!(map; "PostProcessing" -> ListTag),
+			structures: map_decoder!(map; "structures" -> Map),
+			inhabited_time: map_decoder!(map; "InhabitedTime" -> i64),
+			status: map_decoder!(map; "Status" -> String),
+			lights: map_decoder!(map; "Lights" -> Option<ListTag>),
+			entities: map_decoder!(map; "Entities" -> Option<ListTag>),
 		})
 	} else {
 		Err(McError::NbtDecodeError)
