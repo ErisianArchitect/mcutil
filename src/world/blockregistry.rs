@@ -17,8 +17,7 @@ in the registry for as long as the registry exists.
 */
 pub struct BlockRegistry {
 	ids: HashMap<BlockState, u32>,
-	states: HashMap<u32, BlockState>,
-	counter: AtomicU32,
+	states: Vec<BlockState>,
 }
 
 impl BlockRegistry {
@@ -26,8 +25,7 @@ impl BlockRegistry {
 		let air = BlockState::new("minecraft:air", BlockProperties::none());
 		Self {
 			ids: HashMap::from([(air.clone(), 0)]),
-			states: HashMap::from([(0, air)]),
-			counter: AtomicU32::new(1),
+			states: vec![air],
 		}
 	}
 
@@ -37,15 +35,21 @@ impl BlockRegistry {
 		self.ids.get(state)
 			.map(|id| *id)
 			.unwrap_or_else(|| {
-				let id = self.counter.fetch_add(1, Ordering::SeqCst);
+				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
-				self.states.insert(id, state.clone());
+				self.states.push(state.clone());
+				// self.states.insert(id, state.clone());
 				id
 			})
 	}
 
 	/// Gets a [BlockState] from the registry by ID.
 	pub fn get(&self, id: u32) -> Option<BlockState> {
-		self.states.get(&id).map(|state| state.clone())
+		if (id as usize) < self.states.len() {
+			Some(self.states[id as usize].clone())
+		} else {
+			None
+		}
+		// self.states.get(&id).map(|state| state.clone())
 	}
 }
