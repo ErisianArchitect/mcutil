@@ -12,8 +12,23 @@ pub trait BitSize {
 	const BITSIZE: usize;
 }
 
+pub trait BitLength {
+	fn bit_length(self) -> u32;
+}
+
+impl<T: GetBit + BitSize + Copy> BitLength for T {
+	fn bit_length(self) -> u32 {
+		(1..=Self::BITSIZE)
+			.rev()
+			.find(|&n| {
+				self.get_bit(n - 1)
+			}).unwrap_or(0) as u32
+	}
+}
+
 pub trait ShiftIndex: Copy {
 	/// A `u32` value that represents an index that a `1` bit can be shifted to.
+	/// This simply converts the value to u32.
 	fn shift_index(self) -> u32;
 }
 
