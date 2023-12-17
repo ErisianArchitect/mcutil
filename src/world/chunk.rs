@@ -40,25 +40,6 @@ macro_rules! map_decoder {
 	};
 }
 
-// pub struct BlockStateProperty {
-// 	name: String,
-// 	value: String,
-// }
-
-// pub enum BlockStateProperties {
-// 	None,
-// 	Single {
-// 		name: String,
-// 		value: String,
-// 	},
-// 	Many(HashMap<String, String>),
-// }
-
-// pub struct BlockState {
-// 	name: String,
-// 	properties: BlockStateProperties,
-// }
-
 pub struct BlockStates {
 	palette: Vec<BlockState>,
 	data: Vec<u32>,
@@ -208,72 +189,6 @@ impl DecodeNbt for Vec<BlockEntity> {
 		}
 	}
 }
-
-pub fn get_coord_from_chunk_nbt(tag: &Tag) -> Option<(i32, i32)> {
-	if let Tag::Compound(compound) = tag {
-		if let Some(Tag::Int(x_pos)) = compound.get("xPos") {
-			if let Some(Tag::Int(z_pos)) = compound.get("zPos") {
-				return Some((*x_pos, *z_pos));
-			}
-		}
-	}
-	None
-}
-
-// impl DecodeNbt for Vec<ChunkSection> {
-// 	type Error = McError;
-
-// 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-// 		if let Tag::List(ListTag::Compound(compounds)) = nbt {
-// 			let sections = compounds.into_iter().map(|section| {
-// 				ChunkSection {
-// 					y: todo!(),
-// 					block_states: todo!(),
-// 					biomes: todo!(),
-// 					skylight: todo!(),
-// 					blocklight: todo!(),
-// 				}
-// 			}).collect();
-// 			Ok(sections)
-// 		} else {
-// 			Err(McError::NbtDecodeError)
-// 		}
-// 	}
-// }
-
-// impl DecodeNbt for ChunkSection {
-// 	type Error = McError;
-
-// 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-// 		if let Tag::Compound(map) = nbt {
-// 			todo!()
-// 		} else {
-// 			Err(McError::NbtDecodeError)
-// 		}
-// 	}
-// }
-
-// impl DecodeNbt for ChunkSections {
-// 	type Error = McError;
-
-// 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-// 		if let Tag::List(ListTag::Compound(sections)) = nbt {
-// 			Ok(Self {
-// 				sections: sections.into_iter().map(|section| {
-// 					Ok(ChunkSection {
-// 						y: todo!(),
-// 						block_states: todo!(),
-// 						biomes: todo!(),
-// 						skylight: todo!(),
-// 						blocklight: todo!(),
-// 					})
-// 				}).collect::<Result<Vec<ChunkSection>, McError>>()?,
-// 			})
-// 		} else {
-// 			Err(McError::NbtDecodeError)
-// 		}
-// 	}
-// }
 
 /*
 def extract_index(full_index, palette_size, block_states):
@@ -431,33 +346,3 @@ TODO: 	Make it so that chunks can be loaded directly from memory.
 		give faster load times. I also need to make it so that there
 		is a World block registry to register blocks to.
 */
-// impl DecodeNbt for Chunk {
-//     type Error = McError;
-
-//     fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-		
-//         if let Tag::Compound(mut map) = nbt {
-// 			Ok(Self {
-// 				data_version: map_decoder!(map; "DataVersion" -> i32),
-// 				x: map_decoder!(map; "xPos" -> i32),
-// 				y: map_decoder!(map; "yPos" -> i32),
-// 				z: map_decoder!(map; "zPos" -> i32),
-// 				last_update: map_decoder!(map; "LastUpdate" -> i64),
-// 				sections: map_decoder!(map; "sections" -> ChunkSections),
-// 				block_entities: map_decoder!(map; "block_entities" -> Vec<BlockEntity>),
-// 				carving_masks: todo!(),
-// 				heightmaps: todo!(),
-// 				lights: todo!(),
-// 				entities: todo!(),
-// 				fluid_ticks: todo!(),
-// 				block_ticks: todo!(),
-// 				post_processing: todo!(),
-// 				structures: todo!(),
-// 				inhabited_time: todo!(),
-// 				status: todo!(),
-// 			})
-// 		} else {
-// 			Err(McError::NbtDecodeError)
-// 		}
-//     }
-// }
