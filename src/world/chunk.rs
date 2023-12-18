@@ -127,12 +127,39 @@ pub struct Chunk {
 	pub entities: Option<ListTag>,
 }
 
+impl Chunk {
+	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
+		let section_index = coord.1 / 16;
+		let x = coord.0.rem_euclid(16);
+		let y = coord.1.rem_euclid(16);
+		let z = coord.2.rem_euclid(16);
+		for section in &self.sections.sections {
+
+		}
+		todo!()
+	}
+}
+
 pub struct ChunkSection {
 	pub y: i8,
 	pub blocks: Option<Box<[u32]>>,
 	pub biomes: Option<Map>,
 	pub skylight: Option<Vec<i8>>,
 	pub blocklight: Option<Vec<i8>>,
+}
+
+impl ChunkSection {
+	pub fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
+		if let Some(blocks) = &self.blocks {
+			let x = x.rem_euclid(16);
+			let y = y.rem_euclid(16);
+			let z = z.rem_euclid(16);
+			let index = y*16*16 + z*16 + x;
+			Some(blocks[index as usize])
+		} else {
+			None
+		}
+	}
 }
 
 pub struct ChunkSections {
