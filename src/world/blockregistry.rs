@@ -38,7 +38,6 @@ impl BlockRegistry {
 				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
 				self.states.push(state.clone());
-				// self.states.insert(id, state.clone());
 				id
 			})
 	}
@@ -50,6 +49,5 @@ impl BlockRegistry {
 		} else {
 			None
 		}
-		// self.states.get(&id).map(|state| state.clone())
 	}
 }
