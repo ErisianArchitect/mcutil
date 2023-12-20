@@ -130,13 +130,27 @@ pub struct Chunk {
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let section_index = coord.1 / 16;
-		let x = coord.0.rem_euclid(16);
-		let y = coord.1.rem_euclid(16);
-		let z = coord.2.rem_euclid(16);
 		for section in &self.sections.sections {
-
+			if (section.y as i64) == section_index {
+				let x = coord.0.rem_euclid(16);
+				let y = coord.1.rem_euclid(16);
+				let z = coord.2.rem_euclid(16);
+				return section.get_block_id(x, y, z);
+			}
 		}
-		todo!()
+		None
+	}
+
+	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) {
+		let section_index = coord.1 / 16;
+		self.sections.sections.iter_mut().for_each(|section| {
+			if (section.y as i64) == section_index {
+				let x = coord.0.rem_euclid(16);
+				let y = coord.1.rem_euclid(16);
+				let z = coord.2.rem_euclid(16);
+				section.set_block_id(x, y, z, id);
+			}
+		});
 	}
 }
 
@@ -149,15 +163,22 @@ pub struct ChunkSection {
 }
 
 impl ChunkSection {
-	pub fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
+	pub fn get_block_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
 		if let Some(blocks) = &self.blocks {
-			let x = x.rem_euclid(16);
-			let y = y.rem_euclid(16);
-			let z = z.rem_euclid(16);
-			let index = y*16*16 + z*16 + x;
+			let index = local_y*16*16 + local_z*16 + local_x;
 			Some(blocks[index as usize])
 		} else {
 			None
+		}
+	}
+
+	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) {
+		if self.blocks.is_none() {
+			self.blocks = Some(Box::new([0u32; 4096]));
+		}
+		if let Some(blocks) = &mut self.blocks {
+			let index = local_y*16*16 + local_z*16 + local_x;
+			blocks[index as usize] = id;
 		}
 	}
 }
