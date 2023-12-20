@@ -132,8 +132,8 @@ pub trait ChunkManager: Sized {
 
 	fn get_block_id(&self, block_registry: &BlockRegistry, coord: BlockCoord) -> McResult<Option<u32>>;
 	fn get_block_state(&self, block_registry: &BlockRegistry, coord: BlockCoord) -> McResult<Option<BlockState>>;
-	fn set_block_id(&self, block_registry: &mut BlockRegistry, coord: BlockCoord, id: u32) -> McResult<()>;
-	fn set_block_state(&self, block_registry: &mut BlockRegistry, coord: BlockCoord, state: BlockState) -> McResult<()>;
+	fn set_block_id(&mut self, block_registry: &mut BlockRegistry, coord: BlockCoord, id: u32) -> McResult<()>;
+	fn set_block_state(&mut self, block_registry: &mut BlockRegistry, coord: BlockCoord, state: BlockState) -> McResult<()>;
 }
 
 pub struct JavaChunkManager {
@@ -212,39 +212,36 @@ impl ChunkManager for JavaChunkManager {
 		let chunk_coord = coord.chunk_coord();
 		if let Some(chunk) = self.chunks.get(&chunk_coord) {
 			if let Ok(chunk) = chunk.lock() {
-				Ok(chunk.get_block_id(coord.xyz()))
-			} else {
-				Ok(None)
+				return Ok(chunk.get_block_id(coord.xyz()));
 			}
-		} else {
-			Ok(None)
 		}
+		Ok(None)
 	}
 
 	fn get_block_state(&self, block_registry: &BlockRegistry, coord: BlockCoord) -> McResult<Option<BlockState>> {
-		todo!()
+		if let Some(id) = self.get_block_id(block_registry, coord)? {
+			return Ok(block_registry.get(id));
+		}
+		Ok(None)
 	}
 
-	fn set_block_id(&self, block_registry: &mut BlockRegistry, coord: BlockCoord, id: u32) -> McResult<()> {
-		todo!()
+	fn set_block_id(&mut self, block_registry: &mut BlockRegistry, coord: BlockCoord, id: u32) -> McResult<()> {
+		let chunk_coord = coord.chunk_coord();
+		if let Some(chunk) = self.chunks.get_mut(&chunk_coord) {
+			if let Ok(mut chunk) = chunk.lock() {
+				chunk.set_block_id(coord.xyz(), id);
+			}
+		}
+		Ok(())
 	}
 
-	fn set_block_state(&self, block_registry: &mut BlockRegistry, coord: BlockCoord, state: BlockState) -> McResult<()> {
-		todo!()
+	fn set_block_state(&mut self, block_registry: &mut BlockRegistry, coord: BlockCoord, state: BlockState) -> McResult<()> {
+		let id = block_registry.register(&state);
+		self.set_block_id(block_registry, coord, id);
+		Ok(())
 	}
 
 	
-}
-
-#[test]
-fn qtest() {
-	let mut map = HashMap::new();
-	map.insert(1, "Test".to_owned());
-	if let Some(item) = map.get(&2) {
-		println!("{}", item);
-	} else {
-		println!("Not found.");
-	}
 }
 
 pub struct JavaWorld<M: ChunkManager> {
