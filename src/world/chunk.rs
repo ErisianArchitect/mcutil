@@ -162,10 +162,15 @@ pub struct ChunkSection {
 	pub blocklight: Option<Vec<i8>>,
 }
 
+#[inline(always)]
+fn chunk_yzx_index(local_x: i64, local_y: i64, local_z: i64) -> usize {
+	(local_y*256 + local_z*16 + local_x) as usize
+}
+
 impl ChunkSection {
 	pub fn get_block_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
 		if let Some(blocks) = &self.blocks {
-			let index = local_y*16*16 + local_z*16 + local_x;
+			let index = chunk_yzx_index(local_x, local_y, local_z);
 			Some(blocks[index as usize])
 		} else {
 			None
@@ -177,7 +182,7 @@ impl ChunkSection {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
 		if let Some(blocks) = &mut self.blocks {
-			let index = local_y*16*16 + local_z*16 + local_x;
+			let index = chunk_yzx_index(local_x, local_y, local_z);
 			blocks[index as usize] = id;
 		}
 	}
