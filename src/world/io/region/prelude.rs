@@ -8,6 +8,4 @@ pub use super::{
 	coord::*,
 	compressionscheme::*,
 	regionfile::*,
-	// reader::*,
-	// writer::*,
 };
