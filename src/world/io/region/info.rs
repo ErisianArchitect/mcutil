@@ -55,7 +55,7 @@ impl RegionFileInfo {
 	pub fn load<P: AsRef<Path>>(path: P) -> McResult<Self> {
 		let file = File::open(path.as_ref())?;
 		let metadata = std::fs::metadata(path.as_ref())?;
-		let mut reader = BufReader::with_capacity(4096, file);
+		let mut reader = BufReader::with_capacity(4096*2, file);
 		let header = RegionHeader::read_from(&mut reader)?;
 		let mut bits = RegionBitmask::new();
 		for i in 0..1024 {
