@@ -41,6 +41,7 @@ pub struct WorldCoord {
 }
 
 impl WorldCoord {
+	#[inline(always)]
 	pub fn new(x: i64, z: i64, dimension: Dimension) -> Self {
 		Self {
 			x,
@@ -49,6 +50,7 @@ impl WorldCoord {
 		}
 	}
 
+	#[inline(always)]
 	pub fn xz(self) -> (i64, i64) {
 		(
 			self.x,
@@ -57,6 +59,7 @@ impl WorldCoord {
 	}
 
 	/// Converts a chunk coordinate into a region coordinate.
+	#[inline(always)]
 	pub fn region_coord(self) -> Self {
 		Self {
 			x: self.x / 32,
@@ -75,6 +78,7 @@ pub struct BlockCoord {
 }
 
 impl BlockCoord {
+	#[inline(always)]
 	pub fn new(x: i64, y: i64, z: i64, dimension: Dimension) -> Self {
 		Self {
 			x,
@@ -84,6 +88,7 @@ impl BlockCoord {
 		}
 	}
 
+	#[inline(always)]
 	pub fn xyz(self) -> (i64, i64, i64) {
 		(
 			self.x,
@@ -92,6 +97,7 @@ impl BlockCoord {
 		)
 	}
 
+	#[inline(always)]
 	pub fn subchunk_coord(self) -> Self {
 		BlockCoord {
 			x: self.x.rem_euclid(16),
@@ -101,6 +107,7 @@ impl BlockCoord {
 		}
 	}
 
+	#[inline(always)]
 	pub fn chunk_coord(self) -> WorldCoord {
 		WorldCoord {
 			x: self.x / 16,
@@ -109,6 +116,7 @@ impl BlockCoord {
 		}
 	}
 
+	#[inline(always)]
 	pub fn region_coord(self) -> WorldCoord {
 		WorldCoord {
 			x: self.x / 512,
@@ -169,6 +177,14 @@ impl JavaChunkManager {
 			Ok(self.regions.get(&coord).unwrap().clone())
 		}
 	}
+
+	pub fn get_loaded_chunk(&self, coord: WorldCoord) -> Option<Arc<Mutex<Chunk>>> {
+		if let Some(chunk) = self.chunks.get(&coord) {
+			Some(chunk.clone())
+		} else {
+			None
+		}
+	}
 }
 
 impl ChunkManager for JavaChunkManager {
@@ -186,10 +202,10 @@ impl ChunkManager for JavaChunkManager {
 
 	fn load_chunk(&mut self, block_registry: &mut BlockRegistry, coord: WorldCoord) -> McResult<()> {
 		let region_coord = coord.region_coord();
-		let (x, z) = (coord.x.rem_euclid(32), coord.z.rem_euclid(32));
+		let (chunk_x, chunk_z) = (coord.x.rem_euclid(32), coord.z.rem_euclid(32));
 		let region_file = self.load_region(region_coord)?;
 		if let Ok(mut region) = region_file.lock() {
-			let chunk_tag: NamedTag = region.read_data(RegionCoord::from((x, z)))?;
+			let chunk_tag: NamedTag = region.read_data::<_,NamedTag>((chunk_x, chunk_z))?;
 			let chunk = decode_chunk(block_registry, chunk_tag.tag)?;
 			self.chunks.insert(coord, make_arcmutex(chunk));
 		}
@@ -240,8 +256,6 @@ impl ChunkManager for JavaChunkManager {
 		self.set_block_id(block_registry, coord, id);
 		Ok(())
 	}
-
-	
 }
 
 pub struct JavaWorld<M: ChunkManager> {
