@@ -206,8 +206,8 @@ impl ChunkManager for JavaChunkManager {
 		let region_file = self.load_region(region_coord)?;
 		if let Ok(mut region) = region_file.lock() {
 			let chunk_tag: NamedTag = region.read_data::<_,NamedTag>((chunk_x, chunk_z))?;
-			let chunk = decode_chunk(block_registry, chunk_tag.tag)?;
-			self.chunks.insert(coord, make_arcmutex(chunk));
+			let chunk = make_arcmutex(decode_chunk(block_registry, chunk_tag.tag)?);
+			self.chunks.insert(coord, chunk);
 		}
 		Ok(())
 	}
@@ -221,7 +221,8 @@ impl ChunkManager for JavaChunkManager {
 	}
 
 	fn unload_chunk(&mut self, coord: WorldCoord) -> McResult<()> {
-		todo!()
+		self.chunks.remove(&coord);
+		Ok(())
 	}
 
 	fn get_block_id(&self, block_registry: &BlockRegistry, coord: BlockCoord) -> McResult<Option<u32>> {
