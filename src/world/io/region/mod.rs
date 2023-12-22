@@ -15,8 +15,6 @@ pub use sectormanager::*;
 pub mod regionfile;
 pub use regionfile::RegionFile;
 pub mod prelude;
-// pub mod reader;
-// pub mod writer;
 
 /*	╭──────────────────────────────────────────────────────────────────────────────╮
 	│ How do Region Files work?                                                    │
