@@ -40,6 +40,17 @@ macro_rules! map_decoder {
 	};
 }
 
+macro_rules! map_encoder {
+	($map:expr; $name:literal = $value:expr) => {
+		($map).insert($name.to_owned(), $value.encode_nbt());
+	};
+	($map:expr; $($name:literal = $value:expr;)+) => {
+		$(
+			map_encoder!($map; $name = $value);
+		)+
+	};
+}
+
 pub struct BlockStates {
 	palette: Vec<BlockState>,
 	data: Vec<u32>,
@@ -90,6 +101,21 @@ impl DecodeNbt for Heightmaps {
 	}
 }
 
+impl EncodeNbt for Heightmaps {
+	fn encode_nbt(self) -> Tag {
+		let mut map = Map::new();
+		map_encoder!(map;
+			"MOTION_BLOCKING" = self.motion_blocking;
+			"MOTION_BLOCKING_NO_LEAVES" = self.motion_blocking_no_leaves;
+			"OCEAN_FLOOR" = self.ocean_floor;
+			"OCEAN_FLOOR_WG" = self.ocean_floor_wg;
+			"WORLD_SURFACE" = self.world_surface;
+			"WORLD_SURFACE_WG" = self.world_surface_wg;
+		);
+		Tag::Compound(map)
+	}
+}
+
 pub struct Chunk {
 	/// DataVersion
 	pub data_version: i32,
@@ -127,14 +153,20 @@ pub struct Chunk {
 	pub entities: Option<ListTag>,
 }
 
+fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
+	(
+		coord.0.rem_euclid(16),
+		coord.1.rem_euclid(16),
+		coord.2.rem_euclid(16),
+	)
+}
+
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let section_index = coord.1 / 16;
 		for section in &self.sections.sections {
 			if (section.y as i64) == section_index {
-				let x = coord.0.rem_euclid(16);
-				let y = coord.1.rem_euclid(16);
-				let z = coord.2.rem_euclid(16);
+				let (x, y, z) = chunk_local_coord(coord);
 				return section.get_block_id(x, y, z);
 			}
 		}
@@ -145,9 +177,7 @@ impl Chunk {
 		let section_index = coord.1 / 16;
 		self.sections.sections.iter_mut().for_each(|section| {
 			if (section.y as i64) == section_index {
-				let x = coord.0.rem_euclid(16);
-				let y = coord.1.rem_euclid(16);
-				let z = coord.2.rem_euclid(16);
+				let (x, y, z) = chunk_local_coord(coord);
 				section.set_block_id(x, y, z, id);
 			}
 		});
@@ -171,19 +201,19 @@ impl ChunkSection {
 	pub fn get_block_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
 		if let Some(blocks) = &self.blocks {
 			let index = chunk_yzx_index(local_x, local_y, local_z);
-			Some(blocks[index as usize])
+			Some(blocks[index])
 		} else {
 			None
 		}
 	}
 
 	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) {
-		if self.blocks.is_none() {
+		if id != 0 && self.blocks.is_none() {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
 		if let Some(blocks) = &mut self.blocks {
 			let index = chunk_yzx_index(local_x, local_y, local_z);
-			blocks[index as usize] = id;
+			blocks[index] = id;
 		}
 	}
 }
@@ -214,6 +244,17 @@ impl DecodeNbt for CarvingMasks {
 	}
 }
 
+impl EncodeNbt for CarvingMasks {
+	fn encode_nbt(self) -> Tag {
+		let mut map = Map::new();
+		map_encoder!(map;
+			"AIR" = self.air;
+			"LIQUID" = self.liquid;
+		);
+		Tag::Compound(map)
+	}
+}
+
 pub struct BlockEntity {
 	id: String,
 	keep_packed: i8,
@@ -240,6 +281,24 @@ impl DecodeNbt for Vec<BlockEntity> {
 		} else {
 			Err(McError::NbtDecodeError)
 		}
+	}
+}
+
+impl EncodeNbt for Vec<BlockEntity> {
+	fn encode_nbt(self) -> Tag {
+		let entities = self.into_iter().map(|entity| {
+			let mut map = Map::new();
+			map_encoder!(map;
+				"id" = entity.id;
+				"keepPacked" = entity.keep_packed;
+				"x" = entity.x;
+				"y" = entity.y;
+				"z" = entity.z;
+			);
+			map.extend(entity.data);
+			map
+		}).collect::<Vec<Map>>();
+		Tag::List(ListTag::Compound(entities))
 	}
 }
 
@@ -352,13 +411,13 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Chunk> {
 	if let Tag::Compound(mut map) = nbt {
 		
-		if let Tag::List(ListTag::Compound(mut sections)) = map.remove("sections").ok_or(McError::NotFoundInCompound("sections".to_owned()))? {
-			let sections = sections.into_iter()
-				.map(|mut section| decode_section(block_registry, section))
-				.collect::<Result<Vec<ChunkSection>, McError>>()?;
-		} else {
-			return Err(McError::NbtDecodeError)
-		}
+		// if let Tag::List(ListTag::Compound(mut sections)) = map.remove("sections").ok_or(McError::NotFoundInCompound("sections".to_owned()))? {
+		// 	let sections = sections.into_iter()
+		// 		.map(|mut section| decode_section(block_registry, section))
+		// 		.collect::<Result<Vec<ChunkSection>, McError>>()?;
+		// } else {
+		// 	return Err(McError::NbtDecodeError)
+		// }
 		let sections = if let ListTag::Compound(sections) = map_decoder!(map; "sections" -> ListTag) {
 			sections.into_iter()
 				.map(|section| decode_section(block_registry, section))
@@ -391,6 +450,64 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 	} else {
 		Err(McError::NbtDecodeError)
 	}
+}
+
+pub fn encode_section(block_registry: &BlockRegistry, section: ChunkSection) -> Map {
+	let mut map = Map::new();
+	map_encoder!(map; "Y" = section.y);
+	todo!()
+}
+
+pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> McResult<Tag> {
+	let mut map = Map::new();
+	let Chunk {
+		data_version, 		// DataVersion
+		x, 					// xPos
+		y, 					// yPos
+		z, 					// zPos
+		last_update, 		// LastUpdate
+		status, 			// Status
+		sections, 			// sections
+		block_entities, 	// block_entities
+		carving_masks, 		// CarvingMasks
+		heightmaps, 		// Heightmaps
+		fluid_ticks, 		// fluid_ticks
+		block_ticks, 		// block_ticks
+		inhabited_time,		// InhabitedTime
+		post_processing,	// PostProcessing
+		structures, 		// Structures
+		lights, 			// Lights
+		entities, 			// Entities
+	} = chunk;
+	map_encoder!(map;
+		"DataVersion" = data_version;
+		"xPos" = x;
+		"yPos" = y;
+		"zPos" = z;
+		"LastUpdate" = last_update;
+		"Status" = status;
+		"block_entities" = block_entities;
+		"CarvingMasks" = carving_masks;
+		"Heightmaps" = heightmaps;
+		"fluid_ticks" = fluid_ticks;
+		"block_ticks" = block_ticks;
+		"post_processing" = post_processing;
+		"structures" = structures;
+	);
+	if let Some(lights) = lights {
+		map_encoder!(map; "Lights" = lights);
+	}
+	if let Some(entities) = entities {
+		map_encoder!(map; "Entities" = entities);
+	}
+	// let xpos = chunk.x.encode_nbt();
+	// let ypos = chunk.y.encode_nbt();
+	// let zpos = chunk.z.encode_nbt();
+	// let last_update = chunk.last_update.encode_nbt();
+	// let fluid_ticks = chunk.fluid_ticks.encode_nbt();
+	// let block_ticks = chunk.block_ticks.encode_nbt();
+	// let post_processing = chunk.post_processing.encode_nbt();
+	todo!()
 }
 
 /*
