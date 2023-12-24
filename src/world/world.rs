@@ -282,9 +282,7 @@ impl<M: ChunkManager> JavaWorld<M> {
 	pub fn save(&mut self) -> McResult<()> {
 		todo!()
 	}
-}
-
-impl<M: ChunkManager> JavaWorld<M> {
+	
 	pub fn load_chunk(&mut self, coord: WorldCoord) -> McResult<()> {
 		self.chunk_manager.load_chunk(&mut self.block_registry, coord)
 	}
@@ -299,6 +297,22 @@ impl<M: ChunkManager> JavaWorld<M> {
 
 	pub fn unload_chunk(&mut self, coord: WorldCoord) -> McResult<()> {
 		self.chunk_manager.unload_chunk(coord)
+	}
+	
+	pub fn get_block_id(&self, coord: BlockCoord) -> McResult<Option<u32>> {
+		self.chunk_manager.get_block_id(&self.block_registry, coord)
+	}
+
+	pub fn get_block_state(&self, coord: BlockCoord) -> McResult<Option<BlockState>> {
+		self.chunk_manager.get_block_state(&self.block_registry, coord)
+	}
+
+	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) -> McResult<()> {
+		self.chunk_manager.set_block_id(&mut self.block_registry, coord, id)
+	}
+
+	pub fn set_block_state(&mut self, coord: BlockCoord, state: BlockState) -> McResult<()> {
+		self.chunk_manager.set_block_state(&mut self.block_registry, coord, state)
 	}
 }
 
