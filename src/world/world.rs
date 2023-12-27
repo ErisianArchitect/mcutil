@@ -132,7 +132,7 @@ impl BlockCoord {
 // }
 
 pub trait ChunkManager: Sized {
-	fn create(directory: PathBuf) -> McResult<Self>;
+	fn create<P: AsRef<Path>>(directory: P) -> McResult<Self>;
 	fn load_chunk(&mut self, block_registry: &mut BlockRegistry, coord: WorldCoord) -> McResult<()>;
 	fn save_chunk(&self, block_registry: &BlockRegistry, coord: WorldCoord) -> McResult<()>;
 	fn save_all(&self, block_registry: &BlockRegistry) -> McResult<()>;
@@ -188,7 +188,8 @@ impl JavaChunkManager {
 }
 
 impl ChunkManager for JavaChunkManager {
-	fn create(directory: PathBuf) -> McResult<Self> {
+	fn create<P: AsRef<Path>>(directory: P) -> McResult<Self> {
+		let directory = directory.as_ref().to_owned();
 		if directory.is_dir() {
 			Ok(Self {
 				directory,
@@ -270,8 +271,8 @@ impl<M: ChunkManager> JavaWorld<M> {
 		let directory = directory.as_ref().to_owned();
 		if directory.is_dir() {
 			Ok(Self {
-				block_registry: BlockRegistry::new(),
-				chunk_manager: M::create(directory.clone())?,
+				block_registry: BlockRegistry::with_air(),
+				chunk_manager: M::create(&directory)?,
 				directory,
 			})
 		} else {
