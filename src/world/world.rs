@@ -254,7 +254,7 @@ impl ChunkManager for JavaChunkManager {
 	}
 
 	fn set_block_state(&mut self, block_registry: &mut BlockRegistry, coord: BlockCoord, state: BlockState) -> McResult<()> {
-		let id = block_registry.register(&state);
+		let id = block_registry.register(state);
 		self.set_block_id(block_registry, coord, id);
 		Ok(())
 	}
