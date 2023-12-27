@@ -104,7 +104,7 @@ impl BlockState {
 		self.properties.properties()
 	}
 
-	pub fn to_map(&self) -> Map {
+	pub fn to_map(self) -> Map {
 		let mut props = Map::new();
 		if let Some(properties) = self.properties.properties {
 			props.extend(properties.iter().map(|prop| {
