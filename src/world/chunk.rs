@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::default;
+use std::ops::Not;
 
 use super::blockstate::*;
 
@@ -357,7 +358,11 @@ pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
 }
 
 pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) -> usize {
-	let bitsize = palette_size.bit_length().max(4);
+	// Subtract 1 because it's the bit length of the largest possible index
+	// If the palette size is 16, the bit length to represent
+	// 16 is 5, but the bit length to represent the largest index (15)
+	// is only 4.
+	let bitsize = (palette_size - 1).bit_length().max(4);
 	let vpl = (64 / bitsize) as u64;
 	let mask = 2u64.pow(bitsize) - 1;
 	let state_index = index as u64 / vpl;
@@ -384,7 +389,7 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 	// Register blocks.
 	let palette = palette.into_iter()
 		.map(|state| {
-			block_registry.register(&state)
+			block_registry.register(state)
 		}).collect::<Vec<u32>>();
 	let blocks = if block_states.contains_key("data") {
 		// Extract indices from packed values.
@@ -410,14 +415,6 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 
 pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Chunk> {
 	if let Tag::Compound(mut map) = nbt {
-		
-		// if let Tag::List(ListTag::Compound(mut sections)) = map.remove("sections").ok_or(McError::NotFoundInCompound("sections".to_owned()))? {
-		// 	let sections = sections.into_iter()
-		// 		.map(|mut section| decode_section(block_registry, section))
-		// 		.collect::<Result<Vec<ChunkSection>, McError>>()?;
-		// } else {
-		// 	return Err(McError::NbtDecodeError)
-		// }
 		let sections = if let ListTag::Compound(sections) = map_decoder!(map; "sections" -> ListTag) {
 			sections.into_iter()
 				.map(|section| decode_section(block_registry, section))
@@ -452,13 +449,101 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 	}
 }
 
-pub fn encode_section(block_registry: &BlockRegistry, section: ChunkSection) -> Map {
-	let mut map = Map::new();
-	map_encoder!(map; "Y" = section.y);
-	todo!()
+// def inject_index(full_index, palette_size, block_states, value):
+//     bitsize = max((palette_size - 1).bit_length(), 4)
+//     #vpl = values per long
+//     vpl = 64 // bitsize
+//     mask = 2**bitsize-1
+//     masked_value = value & mask
+//     #state_index is the index in the array of longs that our value will be injected to.
+//     state_index = full_index // vpl
+//     #value_offset represents the number of bits to shift to form our mask for setting the value.
+//     value_offset = (full_index % vpl) * bitsize
+//     #block_state will be a 64 bit integer
+//     block_state = block_states[state_index]
+//     #Injecting our value to the block_state
+//     block_states[state_index] = (block_state & ~(mask << value_offset)) | (value << value_offset)
+fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i64], value: u32) {
+	let bitsize = (palette_size - 1).bit_length().max(4);
+	let vpl = (64 / bitsize) as u64;
+	let mask = 2u64.pow(bitsize) - 1;
+	let state_index = full_index as u64 / vpl;
+	let value_offset = ((full_index as u64).rem_euclid(vpl) as u32) * bitsize;
+	let state = states[state_index as usize] as u64;
+	let new_value = (state & (mask << value_offset).not()) | ((value as u64) << value_offset);
+	states[state_index as usize] = new_value as i64;
 }
 
-pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> McResult<Tag> {
+fn create_block_states(block_registry: &BlockRegistry, blocks: Option<Box<[u32]>>) -> Map {
+	if let Some(blocks) = blocks {
+		// Collect unique block-ids
+		let mut local_registry = HashMap::<u32, u32>::new();
+		let mut palette = Vec::<BlockState>::new();
+		let local_ids = blocks.into_iter().map(|block_id| {
+			if let Some(local_id) = local_registry.get(block_id) {
+				*local_id
+			} else {
+				if let Some(state) = block_registry.get(*block_id) {
+					let id = palette.len() as u32;
+					local_registry.insert(*block_id, id);
+					palette.push(state);
+					id
+				} else {
+					0
+				}
+			}
+		}).collect::<Vec<u32>>();
+		// Pack 4096 block ids into array of i64.
+		// The buffer size for the long_array is calculated based on
+		// palette size.
+		let bitsize = (palette.len() - 1).bit_length().max(4);
+		let vpl = (64 / bitsize) as u64;
+		let buffer_size = 4096/vpl + if 4096u64.rem_euclid(vpl) != 0 { 1 } else { 0 };
+		let mut data = vec![0i64; buffer_size as usize];
+		local_ids.into_iter().enumerate().for_each(|(i, id)| {
+			inject_palette_index(i, palette.len(), &mut data, id);
+		});
+		// Build palette
+		let palette = palette.into_iter().map(|state| {
+			state.to_map()
+		}).collect::<Vec<Map>>();
+		let palette = Tag::List(ListTag::Compound(palette));
+		let data = Tag::LongArray(data);
+		Map::from([
+			("palette".to_owned(), palette),
+			("data".to_owned(), data),
+		])
+	} else {
+		let mut palette = Map::new();
+		palette.insert("Name".to_owned(), Tag::string("minecraft:air"));
+		let palette = ListTag::Compound(vec![palette]);
+		Map::from([
+			("palette".to_owned(), Tag::List(palette)),
+		])
+	}
+}
+
+pub fn encode_section(block_registry: &BlockRegistry, section: ChunkSection) -> Map {
+	// In order to encode a ChunkSection into a HashMap<String, Tag>
+	// I will need to create a block state palette from the blocks
+	// in the section.
+	let mut map = Map::new();
+	map_encoder!(map; "Y" = section.y);
+	if let Some(biomes) = section.biomes {
+		map_encoder!(map; "biomes" = biomes);
+	}
+	if let Some(blocklight) = section.blocklight {
+		map_encoder!(map; "BlockLight" = blocklight);
+	}
+	if let Some(skylight) = section.skylight {
+		map_encoder!(map; "SkyLight" = skylight);
+	}
+	let block_states = create_block_states(block_registry, section.blocks);
+	map_encoder!(map; "block_states" = block_states);
+	map
+}
+
+pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> Map {
 	let mut map = Map::new();
 	let Chunk {
 		data_version, 		// DataVersion
@@ -491,6 +576,7 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> McResult<Ta
 		"Heightmaps" = heightmaps;
 		"fluid_ticks" = fluid_ticks;
 		"block_ticks" = block_ticks;
+		"InhabitedTime" = inhabited_time;
 		"post_processing" = post_processing;
 		"structures" = structures;
 	);
@@ -500,14 +586,11 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> McResult<Ta
 	if let Some(entities) = entities {
 		map_encoder!(map; "Entities" = entities);
 	}
-	// let xpos = chunk.x.encode_nbt();
-	// let ypos = chunk.y.encode_nbt();
-	// let zpos = chunk.z.encode_nbt();
-	// let last_update = chunk.last_update.encode_nbt();
-	// let fluid_ticks = chunk.fluid_ticks.encode_nbt();
-	// let block_ticks = chunk.block_ticks.encode_nbt();
-	// let post_processing = chunk.post_processing.encode_nbt();
-	todo!()
+	let sections = ListTag::Compound(sections.sections.into_iter().map(|section| {
+		encode_section(block_registry, section)
+	}).collect::<Vec<Map>>());
+	map_encoder!(map; "sections" = sections);
+	map
 }
 
 /*
