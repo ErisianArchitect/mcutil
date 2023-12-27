@@ -1,5 +1,7 @@
 use sorted_vec::SortedVec;
 
+use crate::nbt::{tag::*, Map};
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct BlockProperty {
 	name: String,
@@ -90,11 +92,35 @@ impl BlockState {
 		}
 	}
 
+	pub fn air() -> Self {
+		Self::new("minecraft:air", BlockProperties::none())
+	}
+
 	pub fn name(&self) -> &str {
 		return &self.name
 	}
 
 	pub fn properties<'a>(&'a self) -> Option<&'a [BlockProperty]> {
 		self.properties.properties()
+	}
+
+	pub fn to_map(&self) -> Map {
+		let mut props = Map::new();
+		if let Some(properties) = self.properties.properties {
+			props.extend(properties.iter().map(|prop| {
+				(prop.name.clone(), Tag::String(prop.value.clone()))
+			}));
+		}
+		Map::from([
+			("Name".to_owned(), Tag::String(self.name.clone())),
+			("Properties".to_owned(), Tag::Compound(props)),
+		])
+	}
+}
+
+impl EncodeNbt for BlockState {
+	fn encode_nbt(self) -> Tag {
+		let map = self.to_map();
+		Tag::Compound(map)
 	}
 }
