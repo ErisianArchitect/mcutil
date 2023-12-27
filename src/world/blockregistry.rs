@@ -22,17 +22,31 @@ pub struct BlockRegistry {
 
 impl BlockRegistry {
 	pub fn new() -> Self {
-		let air = BlockState::new("minecraft:air", BlockProperties::none());
+		Self {
+			ids: HashMap::new(),
+			states: Vec::new(),
+		}
+	}
+
+	/// Creates a block registry with "minecraft:air" registered in
+	/// the first slot (index/id 0).
+	pub fn with_air() -> Self {
+		let air = BlockState::air();
 		Self {
 			ids: HashMap::from([(air.clone(), 0)]),
-			states: vec![air],
+			states: Vec::from([air])
 		}
+	}
+
+	pub fn register_air(mut self) -> Self {
+		self.register(BlockState::air());
+		self
 	}
 
 	/// Registers a [BlockState] with the registry and returns the ID.
 	/// The returned ID can be used to acquire a [BlockState].
-	pub fn register(&mut self, state: &BlockState) -> u32 {
-		self.ids.get(state)
+	pub fn register(&mut self, state: BlockState) -> u32 {
+		self.ids.get(&state)
 			.map(|id| *id)
 			.unwrap_or_else(|| {
 				let id = self.states.len() as u32;
