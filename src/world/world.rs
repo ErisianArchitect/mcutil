@@ -3,7 +3,7 @@
 */
 #![allow(unused)]
 
-use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}};
+use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem};
 
 use crate::{McResult, McError, nbt::tag::NamedTag};
 
@@ -134,8 +134,8 @@ impl BlockCoord {
 pub trait ChunkManager: Sized {
 	fn create<P: AsRef<Path>>(directory: P) -> McResult<Self>;
 	fn load_chunk(&mut self, block_registry: &mut BlockRegistry, coord: WorldCoord) -> McResult<()>;
-	fn save_chunk(&self, block_registry: &BlockRegistry, coord: WorldCoord) -> McResult<()>;
-	fn save_all(&self, block_registry: &BlockRegistry) -> McResult<()>;
+	fn save_chunk(&mut self, block_registry: &BlockRegistry, coord: WorldCoord) -> McResult<()>;
+	fn save_all(&mut self, block_registry: &BlockRegistry) -> McResult<()>;
 	fn unload_chunk(&mut self, coord: WorldCoord) -> McResult<()>;
 
 	fn get_block_id(&self, block_registry: &BlockRegistry, coord: BlockCoord) -> McResult<Option<u32>>;
@@ -213,11 +213,23 @@ impl ChunkManager for JavaChunkManager {
 		Ok(())
 	}
 
-	fn save_chunk(&self, block_registry: &BlockRegistry, coord: WorldCoord) -> McResult<()> {
-		todo!()
+	fn save_chunk(&mut self, block_registry: &BlockRegistry, coord: WorldCoord) -> McResult<()> {
+		let mut region_file = self.load_region(coord.region_coord())?;
+		if let Ok(mut region) = region_file.lock() {
+			if let Some(chunk) = self.chunks.get(&coord) {
+				if let Ok(chunk) = chunk.lock() {
+					let nbt = chunk.to_nbt(block_registry);
+					let (x, z) = coord.xz();
+					let x = x.rem_euclid(32);
+					let z = z.rem_euclid(32);
+					region.write_with_utcnow((x, z), &NamedTag::new(nbt))?;
+				}
+			}
+		}
+		Ok(())
 	}
 
-	fn save_all(&self, block_registry: &BlockRegistry) -> McResult<()> {
+	fn save_all(&mut self, block_registry: &BlockRegistry) -> McResult<()> {
 		todo!()
 	}
 
@@ -292,7 +304,7 @@ impl<M: ChunkManager> JavaWorld<M> {
 		self.chunk_manager.save_chunk(&mut self.block_registry, coord)
 	}
 
-	pub fn save_all(&self, block_registry: &BlockRegistry) -> McResult<()> {
+	pub fn save_all(&mut self, block_registry: &BlockRegistry) -> McResult<()> {
 		self.chunk_manager.save_all(block_registry)
 	}
 
