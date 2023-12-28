@@ -74,6 +74,7 @@ pub struct TileTick {
 	z: i32,
 }
 
+#[derive(Clone)]
 pub struct Heightmaps {
 	motion_blocking: Vec<i64>,
 	motion_blocking_no_leaves: Vec<i64>,
@@ -117,6 +118,7 @@ impl EncodeNbt for Heightmaps {
 	}
 }
 
+#[derive(Clone)]
 pub struct Chunk {
 	/// DataVersion
 	pub data_version: i32,
@@ -183,8 +185,13 @@ impl Chunk {
 			}
 		});
 	}
+
+	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
+		Tag::Compound(encode_chunk(block_registry, self))
+	}
 }
 
+#[derive(Clone)]
 pub struct ChunkSection {
 	pub y: i8,
 	pub blocks: Option<Box<[u32]>>,
@@ -219,10 +226,12 @@ impl ChunkSection {
 	}
 }
 
+#[derive(Clone)]
 pub struct ChunkSections {
 	sections: Vec<ChunkSection>,
 }
 
+#[derive(Clone)]
 pub struct CarvingMasks {
 	air: Vec<i8>,
 	liquid: Vec<i8>,
@@ -256,6 +265,7 @@ impl EncodeNbt for CarvingMasks {
 	}
 }
 
+#[derive(Clone)]
 pub struct BlockEntity {
 	id: String,
 	keep_packed: i8,
@@ -474,12 +484,12 @@ fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i6
 	states[state_index as usize] = new_value as i64;
 }
 
-fn create_block_states(block_registry: &BlockRegistry, blocks: Option<Box<[u32]>>) -> Map {
+fn create_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]>>) -> Map {
 	if let Some(blocks) = blocks {
 		// Collect unique block-ids
 		let mut local_registry = HashMap::<u32, u32>::new();
 		let mut palette = Vec::<BlockState>::new();
-		let local_ids = blocks.into_iter().map(|block_id| {
+		let local_ids = blocks.iter().map(|block_id| {
 			if let Some(local_id) = local_registry.get(block_id) {
 				*local_id
 			} else {
@@ -523,70 +533,70 @@ fn create_block_states(block_registry: &BlockRegistry, blocks: Option<Box<[u32]>
 	}
 }
 
-pub fn encode_section(block_registry: &BlockRegistry, section: ChunkSection) -> Map {
+pub fn encode_section(block_registry: &BlockRegistry, section: &ChunkSection) -> Map {
 	// In order to encode a ChunkSection into a HashMap<String, Tag>
 	// I will need to create a block state palette from the blocks
 	// in the section.
 	let mut map = Map::new();
 	map_encoder!(map; "Y" = section.y);
-	if let Some(biomes) = section.biomes {
+	if let Some(biomes) = &section.biomes {
+		let biomes = biomes.clone();
 		map_encoder!(map; "biomes" = biomes);
 	}
-	if let Some(blocklight) = section.blocklight {
+	if let Some(blocklight) = &section.blocklight {
+		let blocklight = blocklight.clone();
 		map_encoder!(map; "BlockLight" = blocklight);
 	}
-	if let Some(skylight) = section.skylight {
+	if let Some(skylight) = &section.skylight {
+		let skylight = skylight.clone();
 		map_encoder!(map; "SkyLight" = skylight);
 	}
-	let block_states = create_block_states(block_registry, section.blocks);
+	let block_states = create_block_states(block_registry, &section.blocks);
 	map_encoder!(map; "block_states" = block_states);
 	map
 }
 
-pub fn encode_chunk(block_registry: &BlockRegistry, chunk: Chunk) -> Map {
+pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 	let mut map = Map::new();
-	let Chunk {
-		data_version, 		// DataVersion
-		x, 					// xPos
-		y, 					// yPos
-		z, 					// zPos
-		last_update, 		// LastUpdate
-		status, 			// Status
-		sections, 			// sections
-		block_entities, 	// block_entities
-		carving_masks, 		// CarvingMasks
-		heightmaps, 		// Heightmaps
-		fluid_ticks, 		// fluid_ticks
-		block_ticks, 		// block_ticks
-		inhabited_time,		// InhabitedTime
-		post_processing,	// PostProcessing
-		structures, 		// Structures
-		lights, 			// Lights
-		entities, 			// Entities
-	} = chunk;
+	let data_version = chunk.data_version;
+	let x = chunk.x;
+	let y = chunk.y;
+	let z = chunk.z;
+	let last_update = chunk.last_update;
+	let inhabited_time = chunk.inhabited_time;
+	let status = chunk.status.clone(); 
+	let block_entities = chunk.block_entities.clone();
+	let carving_masks = chunk.carving_masks.clone();
+	let heightmaps = chunk.heightmaps.clone();
+	let fluid_ticks = chunk.fluid_ticks.clone();
+	let block_ticks = chunk.block_ticks.clone();
+	let post_processing = chunk.post_processing.clone();
+	let structures = chunk.structures.clone();
 	map_encoder!(map;
 		"DataVersion" = data_version;
 		"xPos" = x;
 		"yPos" = y;
 		"zPos" = z;
 		"LastUpdate" = last_update;
+		"InhabitedTime" = inhabited_time;
 		"Status" = status;
 		"block_entities" = block_entities;
 		"CarvingMasks" = carving_masks;
 		"Heightmaps" = heightmaps;
 		"fluid_ticks" = fluid_ticks;
 		"block_ticks" = block_ticks;
-		"InhabitedTime" = inhabited_time;
 		"post_processing" = post_processing;
 		"structures" = structures;
 	);
-	if let Some(lights) = lights {
+	if let Some(lights) = &chunk.lights {
+		let lights = lights.clone();
 		map_encoder!(map; "Lights" = lights);
 	}
-	if let Some(entities) = entities {
+	if let Some(entities) = &chunk.entities {
+		let entities = entities.clone();
 		map_encoder!(map; "Entities" = entities);
 	}
-	let sections = ListTag::Compound(sections.sections.into_iter().map(|section| {
+	let sections = ListTag::Compound(chunk.sections.sections.iter().map(|section| {
 		encode_section(block_registry, section)
 	}).collect::<Vec<Map>>());
 	map_encoder!(map; "sections" = sections);
