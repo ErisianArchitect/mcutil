@@ -329,6 +329,121 @@ impl<M: ChunkManager> JavaWorld<M> {
 	}
 }
 
+type ArcChunk = Arc<Mutex<Chunk>>;
+type ArcRegion = Arc<Mutex<RegionFile>>;
+
+pub struct VirtualJavaWorld {
+	pub block_registry: BlockRegistry,
+	pub chunks: HashMap<WorldCoord, ArcChunk>,
+	pub regions: HashMap<WorldCoord, ArcRegion>,
+	pub directory: PathBuf,
+}
+
+impl VirtualJavaWorld {
+	pub fn new(directory: impl AsRef<Path>) -> Self {
+		let directory = directory.as_ref().to_owned();
+		Self {
+			block_registry: BlockRegistry::new(),
+			chunks: HashMap::new(),
+			regions: HashMap::new(),
+			directory,
+		}
+	}
+
+	pub fn get_region_directory(&self, dimension: Dimension) -> PathBuf {
+		self.directory.join(match dimension {
+			Dimension::Overworld => "region",
+			Dimension::Nether => "poi",
+			Dimension::Other(_) => todo!(),
+		})
+	}
+
+	pub fn load_region(&mut self, coord: WorldCoord) -> McResult<ArcRegion> {
+		if !self.regions.contains_key(&coord) {
+			let regiondir = self.get_region_directory(coord.dimension);
+			let regname = format!("r.{}.{}.mca", coord.x, coord.z);
+			let regfilepath = regiondir.join(regname);
+			let regionfile = make_arcmutex(RegionFile::open_or_create(regfilepath)?);
+			self.regions.insert(coord, regionfile.clone());
+			Ok(regionfile)
+		} else {
+			Ok(self.regions.get(&coord).unwrap().clone())
+		}
+	}
+
+	pub fn load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunk> {
+		let region = self.load_region(coord.region_coord())?;
+		let lock = region.lock();
+		if let Ok(mut regionfile) = lock {
+			let root = regionfile.read_data::<_, NamedTag>(coord.xz())?;
+			let chunk = make_arcmutex(decode_chunk(&mut self.block_registry, root.tag)?);
+			self.chunks.insert(coord, chunk.clone());
+			Ok(chunk)
+		} else {
+			McError::custom("Failed to lock region file.")
+		}
+	}
+
+	pub fn get_chunk(&self, coord: WorldCoord) -> Option<ArcChunk> {
+		if let Some(chunk) = self.chunks.get(&coord) {
+			Some(chunk.clone())
+		} else {
+			None
+		}
+	}
+
+	pub fn save_chunk(&mut self, coord: WorldCoord) -> McResult<()> {
+		if let Some(chunk) = self.chunks.get(&coord) {
+			let chunk = chunk.clone();
+			if let Ok(chunk) = chunk.lock() {
+				let nbt = chunk.to_nbt(&self.block_registry);
+				let region = self.load_region(coord.region_coord())?;
+				let lock = region.lock();
+				if let Ok(mut regionfile) = lock {
+					let root = NamedTag::new(nbt);
+					regionfile.write_with_utcnow(coord.xz(), &root)?;
+				}
+			}
+			todo!()
+		} else {
+			todo!()
+		}
+	}
+
+	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunk> {
+		self.chunks.remove(&coord)
+	}
+
+	pub fn get_block_id(&self, coord: BlockCoord) -> Option<u32> {
+		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
+			if let Ok(chunk) = chunk.lock() {
+				return chunk.get_block_id(coord.xyz());
+			}
+		}
+		None
+	}
+
+	pub fn get_block_state(&self, coord: BlockCoord) -> Option<BlockState> {
+		if let Some(id) = self.get_block_id(coord) {
+			return self.block_registry.get(id);
+		}
+		None
+	}
+
+	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) {
+		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
+			if let Ok(mut chunk) = chunk.lock() {
+				chunk.set_block_id(coord.xyz(), id);
+			}
+		}
+	}
+
+	pub fn set_block_state(&mut self, coord: BlockCoord, state: BlockState) {
+		let id = self.block_registry.register(state);
+		self.set_block_id(coord, id);
+	}
+}
+
 /*
 World:
 	chunks: HashMap<(i32, i32), ChunkType>
