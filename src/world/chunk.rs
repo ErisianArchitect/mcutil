@@ -228,7 +228,7 @@ impl ChunkSection {
 
 #[derive(Clone)]
 pub struct ChunkSections {
-	sections: Vec<ChunkSection>,
+	pub sections: Vec<ChunkSection>,
 }
 
 #[derive(Clone)]
