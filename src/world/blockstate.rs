@@ -4,8 +4,8 @@ use crate::nbt::{tag::*, Map};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct BlockProperty {
-	name: String,
-	value: String,
+	pub name: String,
+	pub value: String,
 }
 
 impl BlockProperty {
@@ -48,7 +48,7 @@ impl<S1: AsRef<str>, S2: AsRef<str>> Into<BlockProperty> for (S1, S2) {
 
 #[derive(Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct BlockProperties {
-	properties: Option<SortedVec<BlockProperty>>
+	pub properties: Option<SortedVec<BlockProperty>>
 }
 
 impl BlockProperties {
