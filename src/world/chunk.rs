@@ -162,6 +162,7 @@ pub struct Chunk {
 	pub entities: Option<ListTag>,
 }
 
+#[inline(always)]
 fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 	(
 		coord.0.rem_euclid(16),
@@ -170,19 +171,24 @@ fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 	)
 }
 
+#[inline(always)]
+pub const fn chunk_section_index(coord_y: i64, chunk_y: i32) -> usize {
+	let section_index = coord_y / 16;
+	let adj_index = section_index - chunk_y as i64;
+	adj_index as usize
+}
+
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
-		let section_index = coord.1 / 16;
-		let adj_index = section_index - self.y as i64;
+		let section_index = chunk_section_index(coord.1, self.y);
 		let (x, y, z) = chunk_local_coord(coord);
-		self.sections.sections[adj_index as usize].get_block_id(x, y, z)
+		self.sections.sections[section_index].get_block_id(x, y, z)
 	}
 
 	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) {
-		let section_index = coord.1 / 16;
-		let adj_index = section_index - self.y as i64;
+		let section_index = chunk_section_index(coord.1, self.y);
 		let (x, y, z) = chunk_local_coord(coord);
-		self.sections.sections[adj_index as usize].set_block_id(x, y, z, id);
+		self.sections.sections[section_index].set_block_id(x, y, z, id);
 	}
 
 	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
@@ -580,11 +586,10 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 		"InhabitedTime" = inhabited_time;
 		"Status" = status;
 		"block_entities" = block_entities;
-		// "CarvingMasks" = carving_masks;
 		"Heightmaps" = heightmaps;
 		"fluid_ticks" = fluid_ticks;
 		"block_ticks" = block_ticks;
-		"post_processing" = post_processing;
+		"PostProcessing" = post_processing;
 		"structures" = structures;
 	);
 	if let Some(carvingmasks) = carving_masks {
