@@ -79,9 +79,9 @@ pub struct Heightmaps {
 	motion_blocking: Vec<i64>,
 	motion_blocking_no_leaves: Vec<i64>,
 	ocean_floor: Vec<i64>,
-	ocean_floor_wg: Vec<i64>,
+	ocean_floor_wg: Option<Vec<i64>>,
 	world_surface: Vec<i64>,
-	world_surface_wg: Vec<i64>,
+	world_surface_wg: Option<Vec<i64>>,
 }
 
 impl DecodeNbt for Heightmaps {
@@ -93,9 +93,9 @@ impl DecodeNbt for Heightmaps {
 				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Vec<i64>),
 				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Vec<i64>),
 				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Vec<i64>),
-				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Vec<i64>),
+				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Vec<i64>>),
 				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Vec<i64>),
-				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Vec<i64>),
+				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Vec<i64>>),
 			})
 		} else {
 			Err(McError::NbtDecodeError)
@@ -110,10 +110,16 @@ impl EncodeNbt for Heightmaps {
 			"MOTION_BLOCKING" = self.motion_blocking;
 			"MOTION_BLOCKING_NO_LEAVES" = self.motion_blocking_no_leaves;
 			"OCEAN_FLOOR" = self.ocean_floor;
-			"OCEAN_FLOOR_WG" = self.ocean_floor_wg;
+			// "OCEAN_FLOOR_WG" = self.ocean_floor_wg;
 			"WORLD_SURFACE" = self.world_surface;
-			"WORLD_SURFACE_WG" = self.world_surface_wg;
+			// "WORLD_SURFACE_WG" = self.world_surface_wg;
 		);
+		if let Some(ofwg) = self.ocean_floor_wg {
+			map_encoder!(map; "OCEAN_FLOOR_WG" = ofwg);
+		}
+		if let Some(wswg) = self.world_surface_wg {
+			map_encoder!(map; "WORLD_SURFACE_WG" = wswg);
+		}
 		Tag::Compound(map)
 	}
 }
@@ -137,7 +143,7 @@ pub struct Chunk {
 	/// block_entities
 	pub block_entities: Vec<BlockEntity>,
 	/// CarvingMasks
-	pub carving_masks: CarvingMasks,
+	pub carving_masks: Option<CarvingMasks>,
 	/// HeightMaps
 	pub heightmaps: Heightmaps,
 	/// fluid_ticks
@@ -167,23 +173,16 @@ fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let section_index = coord.1 / 16;
-		for section in &self.sections.sections {
-			if (section.y as i64) == section_index {
-				let (x, y, z) = chunk_local_coord(coord);
-				return section.get_block_id(x, y, z);
-			}
-		}
-		None
+		let adj_index = section_index - self.y as i64;
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[adj_index as usize].get_block_id(x, y, z)
 	}
 
 	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) {
 		let section_index = coord.1 / 16;
-		self.sections.sections.iter_mut().for_each(|section| {
-			if (section.y as i64) == section_index {
-				let (x, y, z) = chunk_local_coord(coord);
-				section.set_block_id(x, y, z, id);
-			}
-		});
+		let adj_index = section_index - self.y as i64;
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[adj_index as usize].set_block_id(x, y, z, id);
 	}
 
 	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
@@ -443,7 +442,6 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 			z: map_decoder!(map; "zPos" -> i32),
 			last_update: map_decoder!(map; "LastUpdate" -> i64),
 			block_entities: map_decoder!(map; "block_entities" -> Vec<BlockEntity>),
-			carving_masks: map_decoder!(map; "CarvingMasks" -> CarvingMasks),
 			heightmaps: map_decoder!(map; "Heightmaps" -> Heightmaps),
 			fluid_ticks: map_decoder!(map; "fluid_ticks" -> ListTag),
 			block_ticks: map_decoder!(map; "block_ticks" -> ListTag),
@@ -451,6 +449,7 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 			structures: map_decoder!(map; "structures" -> Map),
 			inhabited_time: map_decoder!(map; "InhabitedTime" -> i64),
 			status: map_decoder!(map; "Status" -> String),
+			carving_masks: map_decoder!(map; "CarvingMasks" -> Option<CarvingMasks>),
 			lights: map_decoder!(map; "Lights" -> Option<ListTag>),
 			entities: map_decoder!(map; "Entities" -> Option<ListTag>),
 		})
@@ -581,13 +580,16 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 		"InhabitedTime" = inhabited_time;
 		"Status" = status;
 		"block_entities" = block_entities;
-		"CarvingMasks" = carving_masks;
+		// "CarvingMasks" = carving_masks;
 		"Heightmaps" = heightmaps;
 		"fluid_ticks" = fluid_ticks;
 		"block_ticks" = block_ticks;
 		"post_processing" = post_processing;
 		"structures" = structures;
 	);
+	if let Some(carvingmasks) = carving_masks {
+		map_encoder!(map; "CarvingMasks" = carvingmasks);
+	}
 	if let Some(lights) = &chunk.lights {
 		let lights = lights.clone();
 		map_encoder!(map; "Lights" = lights);
