@@ -38,6 +38,7 @@ impl BlockRegistry {
 		}
 	}
 
+	/// Registers the air [BlockState].
 	pub fn register_air(mut self) -> Self {
 		self.register(BlockState::air());
 		self
@@ -54,6 +55,15 @@ impl BlockRegistry {
 				self.states.push(state.clone());
 				id
 			})
+	}
+
+	/// Finds the ID of a [BlockState] that has already been registered.
+	pub fn find(&self, state: &BlockState) -> Option<u32> {
+		if let Some(id) = self.ids.get(state) {
+			Some(*id)
+		} else {
+			None
+		}
 	}
 
 	/// Gets a [BlockState] from the registry by ID.
