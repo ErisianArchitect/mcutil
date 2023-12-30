@@ -402,10 +402,13 @@ impl VirtualJavaWorld {
 				if let Ok(mut regionfile) = regionlock {
 					let root = NamedTag::new(nbt);
 					regionfile.write_with_utcnow(coord.xz(), &root)?;
+					return Ok(())
 				}
 			}
+			McError::custom("Failed to write chunk to file.")
+		} else {
+			Ok(())
 		}
-		Ok(())
 	}
 
 	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunk> {
@@ -432,7 +435,7 @@ impl VirtualJavaWorld {
 	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
 		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
 			if let Ok(mut chunk) = chunk.lock() {
-				let old_id = self.get_block_id(coord);
+				let old_id = chunk.get_block_id(coord.xyz());
 				chunk.set_block_id(coord.xyz(), id);
 				return old_id;
 			}
