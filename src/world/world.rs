@@ -435,9 +435,7 @@ impl VirtualJavaWorld {
 	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
 		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
 			if let Ok(mut chunk) = chunk.lock() {
-				let old_id = chunk.get_block_id(coord.xyz());
-				chunk.set_block_id(coord.xyz(), id);
-				return old_id;
+				return chunk.set_block_id(coord.xyz(), id);
 			}
 		}
 		None
