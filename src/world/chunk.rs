@@ -27,7 +27,7 @@ use super::world::*;
 /// ```
 macro_rules! map_decoder {
 	($map:expr; $name:literal) => {
-		$map.remove($name).ok_or(McError::NbtDecodeError)?
+		$map.remove($name).ok_or(McError::NotFoundInCompound($name.to_owned()))?
 	};
 	($map:expr; $name:literal -> Option<$type:ty>) => {
 		if let Some(tag) = $map.remove($name) {
@@ -172,7 +172,7 @@ fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 }
 
 #[inline(always)]
-pub const fn chunk_section_index(coord_y: i64, chunk_y: i32) -> usize {
+const fn chunk_section_index(coord_y: i64, chunk_y: i32) -> usize {
 	let section_index = coord_y / 16;
 	let adj_index = section_index - chunk_y as i64;
 	adj_index as usize
@@ -185,10 +185,10 @@ impl Chunk {
 		self.sections.sections[section_index].get_block_id(x, y, z)
 	}
 
-	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) {
+	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) -> Option<u32> {
 		let section_index = chunk_section_index(coord.1, self.y);
 		let (x, y, z) = chunk_local_coord(coord);
-		self.sections.sections[section_index].set_block_id(x, y, z, id);
+		self.sections.sections[section_index].set_block_id(x, y, z, id)
 	}
 
 	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
@@ -220,13 +220,17 @@ impl ChunkSection {
 		}
 	}
 
-	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) {
+	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) -> Option<u32> {
 		if id != 0 && self.blocks.is_none() {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
 		if let Some(blocks) = &mut self.blocks {
 			let index = chunk_yzx_index(local_x, local_y, local_z);
+			let result = blocks[index];
 			blocks[index] = id;
+			Some(result)
+		} else {
+			None
 		}
 	}
 }
@@ -283,17 +287,21 @@ pub struct BlockEntity {
 impl DecodeNbt for Vec<BlockEntity> {
 	type Error = McError;
 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-		if let Tag::List(ListTag::Compound(entities)) = nbt {
-			entities.into_iter().map(|mut entity| {
-				Ok(BlockEntity {
-					id: map_decoder!(entity; "id" -> String),
-					keep_packed: map_decoder!(entity; "keepPacked" -> i8),
-					x: map_decoder!(entity; "x" -> i32),
-					y: map_decoder!(entity; "y" -> i32),
-					z: map_decoder!(entity; "z" -> i32),
-					data: entity,
-				})
-			}).collect::<Result<Vec<BlockEntity>, McError>>()
+		if let Tag::List(list) = nbt {
+			if let ListTag::Compound(entities) = list {
+				entities.into_iter().map(|mut entity| {
+					Ok(BlockEntity {
+						id: map_decoder!(entity; "id" -> String),
+						keep_packed: map_decoder!(entity; "keepPacked" -> i8),
+						x: map_decoder!(entity; "x" -> i32),
+						y: map_decoder!(entity; "y" -> i32),
+						z: map_decoder!(entity; "z" -> i32),
+						data: entity,
+					})
+				}).collect::<Result<Vec<BlockEntity>, McError>>()
+			} else {
+				Ok(Vec::new())
+			}
 		} else {
 			Err(McError::NbtDecodeError)
 		}
@@ -393,27 +401,31 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 	let blocklight = map_decoder!(section; "BlockLight" -> Option<ByteArray>);
 	let skylight = map_decoder!(section; "SkyLight" -> Option<ByteArray>);
 
-	let mut block_states = map_decoder!(section; "block_states" -> Map);
+	let mut block_states = map_decoder!(section; "block_states" -> Option<Map>);
 
-	// Now I need to transform the block_data and palette into registry IDs.
-	// The ending block_data should contain 4096 u32 values representing their IDs in
-	// the registry. So I need to register each BlockState in the palette with the
-	// registry, retrieving the ID. I think the appropriate way to do this would be
-	// to do an iterator map to the block_registry IDs.
-	let palette = decode_palette(map_decoder!(block_states; "palette" -> ListTag))?;
-	// Register blocks.
-	let palette = palette.into_iter()
-		.map(|state| {
-			block_registry.register(state)
-		}).collect::<Vec<u32>>();
-	let blocks = if block_states.contains_key("data") {
-		// Extract indices from packed values.
-		let data = map_decoder!(block_states; "data" -> LongArray);
-		let data = (0..4096).into_iter().map(|full_index| {
-			let index = extract_palette_index(full_index, palette.len(), data.as_slice());
-			palette[index]
-		}).collect::<Vec<u32>>();
-		Some(data.into_boxed_slice())
+	let blocks = if let Some(mut block_states) = block_states {
+		// Now I need to transform the block_data and palette into registry IDs.
+		// The ending block_data should contain 4096 u32 values representing their IDs in
+		// the registry. So I need to register each BlockState in the palette with the
+		// registry, retrieving the ID. I think the appropriate way to do this would be
+		// to do an iterator map to the block_registry IDs.
+		let palette = decode_palette(map_decoder!(block_states; "palette" -> ListTag))?;
+		// Register blocks.
+		let palette = palette.into_iter()
+			.map(|state| {
+				block_registry.register(state)
+			}).collect::<Vec<u32>>();
+		if block_states.contains_key("data") {
+			// Extract indices from packed values.
+			let data = map_decoder!(block_states; "data" -> LongArray);
+			let data = (0..4096).into_iter().map(|full_index| {
+				let index = extract_palette_index(full_index, palette.len(), data.as_slice());
+				palette[index]
+			}).collect::<Vec<u32>>();
+			Some(data.into_boxed_slice())
+		} else {
+			None
+		}
 	} else {
 		None
 	};
