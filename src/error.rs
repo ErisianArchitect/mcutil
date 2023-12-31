@@ -38,7 +38,7 @@ pub enum McError {
 	ParseError(#[from] crate::nbt::snbt::ParseError),
 	#[error("There was an error decoding the NBT Tag.")]
 	NbtDecodeError,
-	#[error("Tag was not found in Compound.")]
+	#[error("Tag was not found in Compound.\n\"{0}\"")]
 	NotFoundInCompound(String),
 	#[error("World Directory not found. {0}")]
 	WorldDirectoryNotFound(PathBuf),
