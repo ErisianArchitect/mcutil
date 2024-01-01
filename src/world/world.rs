@@ -273,6 +273,14 @@ impl VirtualJavaWorld {
 		}
 	}
 
+	pub fn get_or_load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunk> {
+		if let Some(chunk) = self.get_chunk(coord) {
+			Ok(chunk)
+		} else {
+			self.load_chunk(coord)
+		}
+	}
+
 	pub fn get_chunk(&self, coord: WorldCoord) -> Option<ArcChunk> {
 		if let Some(chunk) = self.chunks.get(&coord) {
 			Some(chunk.clone())
