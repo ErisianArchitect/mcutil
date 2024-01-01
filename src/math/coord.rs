@@ -2,13 +2,19 @@
 pub enum Dimension {
 	Overworld,
 	Nether,
+	TheEnd,
 	Other(u32),
 }
 
 impl Dimension {
 	#[inline(always)]
-	pub fn coord(self, x: i64, y: i64, z: i64) -> BlockCoord {
+	pub fn blockcoord(self, x: i64, y: i64, z: i64) -> BlockCoord {
 		BlockCoord::new(x, y, z, self)
+	}
+
+	#[inline(always)]
+	pub fn worldcoord(self, x: i64, z: i64) -> WorldCoord {
+		WorldCoord::new(x, z, self)
 	}
 }
 
