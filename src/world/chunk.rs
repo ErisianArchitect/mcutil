@@ -160,6 +160,7 @@ pub struct Chunk {
 	pub lights: Option<ListTag>,
 	/// Entities
 	pub entities: Option<ListTag>,
+	pub other: Map,
 }
 
 #[inline(always)]
@@ -472,6 +473,7 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 			carving_masks: map_decoder!(map; "CarvingMasks" -> Option<CarvingMasks>),
 			lights: map_decoder!(map; "Lights" -> Option<ListTag>),
 			entities: map_decoder!(map; "Entities" -> Option<ListTag>),
+			other: map,
 		})
 	} else {
 		Err(McError::NbtDecodeError)
@@ -621,6 +623,7 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 		encode_section(block_registry, section)
 	}).collect::<Vec<Map>>());
 	map_encoder!(map; "sections" = sections);
+	map.extend(chunk.other.clone().into_iter());
 	map
 }
 
