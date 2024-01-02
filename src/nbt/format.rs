@@ -7,7 +7,7 @@ use chumsky::primitive::todo;
 
 use crate::nbt::{tagtype::*, tag::ListTag, MapType};
 // TODO: This module is incomplete, so don't use it unless you wanna lose a finger.
-use std::{fmt::{Write, Display, Debug, Pointer}};
+use std::fmt::{Write, Display, Debug, Pointer};
 
 pub fn write_byte<W: Write>(writer: &mut W, value: Byte) -> std::fmt::Result {
 	write!(writer, "{value}B")
