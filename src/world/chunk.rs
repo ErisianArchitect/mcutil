@@ -172,23 +172,23 @@ fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 }
 
 #[inline(always)]
-const fn chunk_section_index(coord_y: i64, chunk_y: i32) -> usize {
+const fn chunk_section_index(coord_y: i64, chunk_y: i64) -> usize {
 	let section_index = coord_y.div_euclid(16);
-	let adj_index = section_index - chunk_y as i64;
+	let adj_index = section_index - chunk_y;
 	adj_index as usize
 }
 
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i32);
+		let section_index = chunk_section_index(coord.1, lowy as i64);
 		let (x, y, z) = chunk_local_coord(coord);
 		self.sections.sections[section_index].get_block_id(x, y, z)
 	}
 
 	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i32);
+		let section_index = chunk_section_index(coord.1, lowy as i64);
 		let (x, y, z) = chunk_local_coord(coord);
 		self.sections.sections[section_index].set_block_id(x, y, z, id)
 	}
