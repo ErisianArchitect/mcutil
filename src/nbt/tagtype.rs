@@ -25,9 +25,9 @@ pub trait TypeId {
 }
 
 macro_rules! typeid_impls {
-	($($types:ty => $id:expr;)+) => {
+	($($type:ty => $id:expr;)+) => {
 		$(
-			impl TypeId for $types {
+			impl TypeId for $type {
 				fn tag_id() -> TagID {
 					$id
 				}
