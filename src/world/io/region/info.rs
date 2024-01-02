@@ -186,9 +186,7 @@ impl From<[[bool; 32]; 32]> for RegionBitmask {
 		let mut mask = Self::new();
 		for z in 0..32 {
 			for x in 0..32 {
-				if value[z][x] {
-					mask.set((x, z), true);
-				}
+				mask.set((x, z), value[z][x]);
 			}
 		}
 		mask
@@ -200,9 +198,7 @@ impl From<&[[bool; 32]; 32]> for RegionBitmask {
 		let mut mask = Self::new();
 		for z in 0..32 {
 			for x in 0..32 {
-				if value[z][x] {
-					mask.set((x, z), true);
-				}
+				mask.set((x, z), value[z][x]);
 			}
 		}
 		mask
