@@ -3,9 +3,7 @@ use std::io::{
 	Seek, SeekFrom,
 };
 
-use crate::{
-	McResult,
-};
+use crate::McResult;
 
 pub const BUFFERSIZE: usize = 8192;
 
