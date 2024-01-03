@@ -125,7 +125,7 @@ impl VirtualJavaWorld {
 		}
 	}
 
-	/// Remove a chunk for internal storage.
+	/// Remove a chunk from internal storage.
 	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunk> {
 		self.chunks.remove(&coord)
 	}
