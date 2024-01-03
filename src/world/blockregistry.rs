@@ -52,7 +52,7 @@ impl BlockRegistry {
 			.unwrap_or_else(|| {
 				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
-				self.states.push(state.clone());
+				self.states.push(state);
 				id
 			})
 	}
