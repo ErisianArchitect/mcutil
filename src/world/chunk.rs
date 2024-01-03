@@ -623,7 +623,9 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 		encode_section(block_registry, section)
 	}).collect::<Vec<Map>>());
 	map_encoder!(map; "sections" = sections);
-	map.extend(chunk.other.clone().into_iter());
+	if !chunk.other.is_empty() {
+		map.extend(chunk.other.clone());
+	}
 	map
 }
 
