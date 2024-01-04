@@ -37,7 +37,7 @@ pub struct VirtualJavaWorld {
 }
 
 impl VirtualJavaWorld {
-	pub fn new(directory: impl AsRef<Path>) -> Self {
+	pub fn open(directory: impl AsRef<Path>) -> Self {
 		Self {
 			block_registry: BlockRegistry::new(),
 			chunks: HashMap::new(),
@@ -161,7 +161,8 @@ impl VirtualJavaWorld {
 	}
 
 	/// Set the block state at a coordinate. This will return the old block state.
-	pub fn set_block_state(&mut self, coord: BlockCoord, state: BlockState) -> Option<BlockState> {
+	pub fn set_block_state(&mut self, coord: BlockCoord, state: impl Into<BlockState>) -> Option<BlockState> {
+		let state = state.into();
 		let id = self.block_registry.register(state);
 		self.set_block_id(coord, id).and_then(|id| {
 			self.block_registry.get(id)
