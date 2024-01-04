@@ -22,3 +22,4 @@ momo = "0.2.2"
 byteorder = "1.4.3"
 macrocraft = { path = "./macrocraft" }
 sorted-vec = "0.8.2"
+rand = "0.8.5"
