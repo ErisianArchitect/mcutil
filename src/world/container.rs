@@ -1,5 +1,12 @@
 use super::{blockregistry::BlockRegistry, blockstate::BlockState};
 
+pub trait BlockStorage {
+	fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32>;
+	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<BlockState>;
+	fn set_block_id(&mut self, x: i64, y: i64, z: i64, id: u32) -> Option<u32>;
+	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<BlockState>;
+}
+
 pub struct BlockContainer {
 	size: (u16, u16, u16),
 	blocks: Box<[u32]>,
@@ -20,8 +27,8 @@ impl BlockContainer {
 		R::from(self.size)
 	}
 
-	fn block_index(&self, x: u16, y: u16, z: u16) -> Option<usize> {
-		if x > self.size.0 || y > self.size.1 || z > self.size.2 {
+	fn block_index(&self, x: i64, y: i64, z: i64) -> Option<usize> {
+		if x > self.size.0 as i64 || y > self.size.1 as i64 || z > self.size.2 as i64 {
 			return None;
 		}
 		let (xs, zs) = (self.size.0 as usize, self.size.2 as usize);
@@ -29,25 +36,27 @@ impl BlockContainer {
 		let index = y * (xs*zs) + z * xs + x;
 		Some(index)
 	}
+}
 
-	pub fn get_block_id(&self, x: u16, y: u16, z: u16) -> Option<u32> {
+impl BlockStorage for BlockContainer {
+	fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
 		let index = self.block_index(x, y, z)?;
 		Some(self.blocks[index])
 	}
 
-	pub fn get_block_state(&self, x: u16, y: u16, z: u16) -> Option<BlockState> {
+	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<BlockState> {
 		let id = self.get_block_id(x, y, z)?;
 		self.block_registry.get(id)
 	}
 
-	pub fn set_block_id(&mut self, x: u16, y: u16, z: u16, id: u32) -> Option<u32> {
+	fn set_block_id(&mut self, x: i64, y: i64, z: i64, id: u32) -> Option<u32> {
 		let index = self.block_index(x, y, z)?;
 		let old_id = self.blocks[index];
 		self.blocks[index] = id;
 		Some(old_id)
 	}
 
-	pub fn set_block_state(&mut self, x: u16, y: u16, z: u16, state: impl Into<BlockState>) -> Option<BlockState> {
+	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<BlockState> {
 		let state = state.into();
 		let id = self.block_registry.register(state);
 		let old_id = self.set_block_id(x, y, z, id)?;
