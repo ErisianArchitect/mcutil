@@ -554,7 +554,7 @@ fn create_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 	}
 }
 
-pub fn encode_section(block_registry: &BlockRegistry, section: &ChunkSection) -> Map {
+fn encode_section(block_registry: &BlockRegistry, section: &ChunkSection) -> Map {
 	// In order to encode a ChunkSection into a HashMap<String, Tag>
 	// I will need to create a block state palette from the blocks
 	// in the section.
