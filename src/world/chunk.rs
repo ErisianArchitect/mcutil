@@ -166,9 +166,9 @@ pub struct Chunk {
 #[inline(always)]
 fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
 	(
-		coord.0.rem_euclid(16),
-		coord.1.rem_euclid(16),
-		coord.2.rem_euclid(16),
+		coord.0 & 0xf,
+		coord.1 & 0xf,
+		coord.2 & 0xf,
 	)
 }
 
@@ -209,7 +209,10 @@ pub struct ChunkSection {
 }
 
 #[inline(always)]
-fn chunk_yzx_index(local_x: i64, local_y: i64, local_z: i64) -> usize {
+fn chunk_yzx_index(x: i64, y: i64, z: i64) -> usize {
+	let local_x = x & 0xf;
+	let local_y = y & 0xf;
+	let local_z = z & 0xf;
 	(local_y*256 + local_z*16 + local_x) as usize
 }
 
