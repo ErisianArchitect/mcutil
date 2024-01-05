@@ -194,6 +194,21 @@ impl WorldCoord {
 		)
 	}
 
+	#[inline(always)]
+	pub fn overworld(x: i64, z: i64) -> Self {
+		Self::new(x, z, Dimension::Overworld)
+	}
+
+	#[inline(always)]
+	pub fn nether(x: i64, z: i64) -> Self {
+		Self::new(x, z, Dimension::Nether)
+	}
+
+	#[inline(always)]
+	pub fn the_end(x: i64, z: i64) -> Self {
+		Self::new(x, z, Dimension::TheEnd)
+	}
+
 	/// Converts a chunk coordinate into a region coordinate.
 	#[inline(always)]
 	pub fn region_coord(self) -> Self {
@@ -231,6 +246,21 @@ impl BlockCoord {
 			self.y,
 			self.z,
 		)
+	}
+
+	#[inline(always)]
+	pub fn overworld(x: i64, y: i64, z: i64) -> Self {
+		Self::new(x, y, z, Dimension::Overworld)
+	}
+
+	#[inline(always)]
+	pub fn nether(x: i64, y: i64, z: i64) -> Self {
+		Self::new(x, y, z, Dimension::Nether)
+	}
+
+	#[inline(always)]
+	pub fn the_end(x: i64, y: i64, z: i64) -> Self {
+		Self::new(x, y, z, Dimension::TheEnd)
 	}
 
 	#[inline(always)]
