@@ -60,7 +60,7 @@ pub fn octree_node_index<T: FirstBit>(x: T, y: T, z: T) -> usize {
 /// In a 16x16x16 chunk section, there are 4096 blocks.
 /// This function returns an index in a flattened array
 /// where a block would be stored. This is merely a bit manipulation.
-/// Here is how the bits would be laid out:
+/// Here is how the bits would be laid out (from right to left):
 /// ```text
 /// ╭────────────╮
 /// │       <-- 0│
@@ -68,16 +68,22 @@ pub fn octree_node_index<T: FirstBit>(x: T, y: T, z: T) -> usize {
 /// │321032103210│
 /// ╰────────────╯
 /// ```
-/// This function assumes that each of the inputs (`x`,`y`,`z`) is `0 <= value <= 15`.
-/// Put bad data in, get bad data out.
-pub fn block_index_16_cube<T>(x: T, y: T, z: T) -> usize
+pub fn index_16_cube<T>(x: T, y: T, z: T) -> usize
 where
 T: ToUsize {
-	let x = x.to_usize();
-	let y = y.to_usize();
-	let z = z.to_usize();
+	let x = x.to_usize() & 0xf;
+	let y = y.to_usize() & 0xf;
+	let z = z.to_usize() & 0xf;
 
 	(y << 8) | (z << 4) | x
+}
+
+pub fn index_32_square<T>(x: T, y: T) -> usize
+where
+T: ToUsize {
+	let x = x.to_usize() & 0x1f;
+	let y = y.to_usize() & 0x1f;
+	(y << 5) | x
 }
 
 
