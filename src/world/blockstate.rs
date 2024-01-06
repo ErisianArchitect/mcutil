@@ -126,12 +126,10 @@ impl BlockState {
 	}
 
 	pub fn try_from_map(map: &Map) -> McResult<Self> {
-		let name = map.get("Name");
-		let properties = map.get("Properties");
-		let Some(Tag::String(name_str)) = name else {
+		let Some(Tag::String(name)) = map.get("Name") else {
 			return Err(crate::McError::NbtDecodeError);
 		};
-		let properties = if let Some(props_some) = properties {
+		let properties = if let Some(props_some) = map.get("Properties") {
 			if let Tag::Compound(properties) = props_some {
 				BlockProperties::from(properties.iter().map(|(key, value)| {
 					if let Tag::String(value) = value {
@@ -146,7 +144,7 @@ impl BlockState {
 		} else {
 			BlockProperties::none()
 		};
-		Ok(Self::new(name_str, properties))
+		Ok(Self::new(name, properties))
 	}
 }
 
