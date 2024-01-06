@@ -6,6 +6,7 @@
 use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem};
 
 use crate::{McResult, McError, nbt::tag::NamedTag};
+use super::container::*;
 
 use super::{
 	blockregistry::BlockRegistry,
