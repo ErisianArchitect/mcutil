@@ -58,7 +58,7 @@ impl BlockProperties {
 		}
 	}
 
-	pub fn is_none_or_empty(&self) -> bool {
+	pub fn is_empty(&self) -> bool {
 		if let Some(properties) = &self.properties {
 			properties.is_empty()
 		} else {
