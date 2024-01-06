@@ -58,7 +58,7 @@ impl BlockProperties {
 		}
 	}
 
-	pub fn properties<'a>(&'a self) -> Option<&'a [BlockProperty]> {
+	pub fn properties(&self) -> Option<&[BlockProperty]> {
 		if let Some(props) = &self.properties {
 			Some(props.as_slice())
 		} else {
@@ -100,7 +100,7 @@ impl BlockState {
 		return &self.name
 	}
 
-	pub fn properties<'a>(&'a self) -> Option<&'a [BlockProperty]> {
+	pub fn properties(&self) -> Option<&[BlockProperty]> {
 		self.properties.properties()
 	}
 
