@@ -101,5 +101,23 @@ mod tests {
 			Some(some) => println!("Some: {some}"),
 			None => println!("None"),
 		}
+		print!("Value 1: ");
+		let result = false.if_else(|| {
+			println!("True");
+			1
+		}, || {
+			println!("False");
+			2
+		});
+		println!("Result: {result}");
+		print!("Value 2: ");
+		let result = true.if_else(|| {
+			println!("True");
+			1
+		}, || {
+			println!("False");
+			2
+		});
+		println!("Result: {result}");
 	}
 }
