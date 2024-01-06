@@ -28,12 +28,14 @@ impl BlockContainer {
 	}
 
 	fn block_index(&self, x: i64, y: i64, z: i64) -> Option<usize> {
-		if x > self.size.0 as i64 || y > self.size.1 as i64 || z > self.size.2 as i64 {
+		if x > self.size.0 as i64 || x < 0
+		|| y > self.size.1 as i64 || y < 0
+		|| z > self.size.2 as i64 || z < 0 {
 			return None;
 		}
 		let (xs, zs) = (self.size.0 as usize, self.size.2 as usize);
 		let (x, y, z) = (x as usize, y as usize, z as usize);
-		let index = y * (xs*zs) + z * xs + x;
+		let index = (y * (xs * zs)) + (z * xs) + x;
 		Some(index)
 	}
 }
