@@ -1,6 +1,6 @@
 use sorted_vec::SortedVec;
 
-use crate::nbt::{tag::*, Map};
+use crate::{nbt::{tag::*, Map}, McResult, McError};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct BlockProperty {
@@ -92,6 +92,31 @@ pub struct BlockState {
 	properties: BlockProperties,
 }
 
+/// This macro is used to remove an entry from a Map (usually HashMap or IndexMap)
+/// the item that is removed from the map is then decoded from the NBT
+/// into the requested type.
+/// ```rust,no_run
+/// let map: Map;
+/// let value: Byte = map_decoder!(map; "some tag" -> Byte);
+/// // In case the value might not exist.
+/// let option: Option<Byte> = map_decoder!(map; "some tag" -> Option<Byte>);
+/// ```
+macro_rules! map_decoder {
+	($map:expr; $name:literal) => {
+		$map.remove($name).ok_or(McError::NotFoundInCompound($name.to_owned()))?
+	};
+	($map:expr; $name:literal -> Option<$type:ty>) => {
+		if let Some(tag) = $map.remove($name) {
+			Some(<$type>::decode_nbt(tag)?)
+		} else {
+			None
+		}
+	};
+	($map:expr; $name:literal -> $type:ty) => {
+		<$type>::decode_nbt($map.remove($name).ok_or(McError::NotFoundInCompound($name.to_owned()))?)?
+	};
+}
+
 impl BlockState {
 	pub fn new<S: AsRef<str>, P: Into<BlockProperties>>(name: S, properties: P) -> Self {
 		Self {
@@ -123,6 +148,30 @@ impl BlockState {
 			("Name".to_owned(), Tag::String(self.name.clone())),
 			("Properties".to_owned(), Tag::Compound(props)),
 		])
+	}
+
+	pub fn try_from_map(map: &Map) -> McResult<Self> {
+		let name = map.get("Name");
+		let properties = map.get("Properties");
+		let Some(Tag::String(name_str)) = name else {
+			return Err(crate::McError::NbtDecodeError);
+		};
+		let properties = if let Some(props_some) = properties {
+			if let Tag::Compound(properties) = props_some {
+				BlockProperties::from(properties.iter().map(|(key, value)| {
+					if let Tag::String(value) = value {
+						Ok((key.clone(), value.clone()))
+					} else {
+						Err(McError::NbtDecodeError)
+					}
+				}).collect::<McResult<Vec<(String, String)>>>()?)
+			} else {
+				return Err(McError::NbtDecodeError);
+			}
+		} else {
+			BlockProperties::none()
+		};
+		Ok(Self::new(name_str, properties))
 	}
 }
 
