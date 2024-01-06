@@ -58,6 +58,14 @@ impl BlockProperties {
 		}
 	}
 
+	pub fn is_none_or_empty(&self) -> bool {
+		if let Some(properties) = &self.properties {
+			properties.is_empty()
+		} else {
+			true
+		}
+	}
+
 	pub fn properties(&self) -> Option<&[BlockProperty]> {
 		if let Some(props) = &self.properties {
 			Some(props.as_slice())
