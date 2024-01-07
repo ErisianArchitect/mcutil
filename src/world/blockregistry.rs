@@ -28,6 +28,10 @@ impl BlockRegistry {
 		}
 	}
 
+	pub fn len(&self) -> usize {
+		self.states.len()
+	}
+
 	/// Creates a block registry with "minecraft:air" registered in
 	/// the first slot (index/id 0).
 	pub fn with_air() -> Self {
