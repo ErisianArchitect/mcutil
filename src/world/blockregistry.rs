@@ -52,7 +52,7 @@ impl BlockRegistry {
 	/// The returned ID can be used to acquire a [BlockState].
 	pub fn register(&mut self, state: BlockState) -> u32 {
 		self.ids.get(&state)
-			.map(|id| *id)
+			.map(|&id| id)
 			.unwrap_or_else(|| {
 				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
@@ -63,8 +63,8 @@ impl BlockRegistry {
 
 	/// Finds the ID of a [BlockState] that has already been registered.
 	pub fn find(&self, state: &BlockState) -> Option<u32> {
-		if let Some(id) = self.ids.get(state) {
-			Some(*id)
+		if let Some(&id) = self.ids.get(state) {
+			Some(id)
 		} else {
 			None
 		}
