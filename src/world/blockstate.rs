@@ -148,6 +148,13 @@ impl BlockState {
 	}
 }
 
+// Allows for creating BlockState from strings.
+impl<S: AsRef<str>> From<S> for BlockState {
+	fn from(value: S) -> Self {
+		BlockState::new(value, BlockProperties::none())
+	}
+}
+
 impl EncodeNbt for BlockState {
 	fn encode_nbt(self) -> Tag {
 		let map = self.to_map();
