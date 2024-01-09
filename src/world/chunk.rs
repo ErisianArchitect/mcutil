@@ -1,5 +1,4 @@
 // #![allow(unused)]
-
 use std::collections::HashMap;
 // use std::default;
 use std::ops::Not;
@@ -402,18 +401,13 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 			.map(|state| {
 				block_registry.register(state)
 			}).collect::<Vec<u32>>();
-		if block_states.contains_key("data") {
-			// Extract indices from packed values.
-			// TODO: let data = map_decoder!(block_states; "data" -> Option<LongArray>);
-			let data = map_decoder!(block_states; "data" -> LongArray);
-			let data = (0..4096).into_iter().map(|full_index| {
-				let index = extract_palette_index(full_index, palette.len(), data.as_slice());
+		map_decoder!(block_states; "data" -> Option<LongArray>).map(|blocks| {
+			let remapped = (0..4096).into_iter().map(|full_index| {
+				let index = extract_palette_index(full_index, palette.len(), &blocks);
 				palette[index]
 			}).collect::<Vec<u32>>();
-			Some(data.into_boxed_slice())
-		} else {
-			None
-		}
+			remapped.into_boxed_slice()
+		})
 	} else {
 		None
 	};
