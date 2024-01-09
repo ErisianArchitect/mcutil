@@ -1,7 +1,7 @@
-#![allow(unused)]
+// #![allow(unused)]
 
 use std::collections::HashMap;
-use std::default;
+// use std::default;
 use std::ops::Not;
 
 use super::blockstate::*;
@@ -10,11 +10,11 @@ use crate::McError;
 use crate::McResult;
 use crate::math::bit::BitLength;
 use crate::nbt::*;
-use crate::nbt::io::*;
+// use crate::nbt::io::*;
 use crate::nbt::tag::*;
 use crate::nbt::tagtype::*;
 use super::blockregistry::BlockRegistry;
-use super::world::*;
+// use super::world::*;
 
 /// This macro is used to remove an entry from a Map (usually HashMap or IndexMap)
 /// the item that is removed from the map is then decoded from the NBT
@@ -52,27 +52,27 @@ macro_rules! map_encoder {
 	};
 }
 
-pub struct BlockStates {
-	palette: Vec<BlockState>,
-	data: Vec<u32>,
-}
+// pub struct BlockStates {
+// 	palette: Vec<BlockState>,
+// 	data: Vec<u32>,
+// }
 
-pub struct LightData {
-	data: Box<[i8; 2048]>
-}
+// pub struct LightData {
+// 	data: Box<[i8; 2048]>
+// }
 
-pub struct Biomes {
-	palette: Vec<String>
-}
+// pub struct Biomes {
+// 	palette: Vec<String>
+// }
 
-pub struct TileTick {
-	block_id: String,
-	precedence: i32,
-	ticks: i32,
-	x: i32,
-	y: i32,
-	z: i32,
-}
+// pub struct TileTick {
+// 	block_id: String,
+// 	precedence: i32,
+// 	ticks: i32,
+// 	x: i32,
+// 	y: i32,
+// 	z: i32,
+// }
 
 #[derive(Clone)]
 pub struct Heightmaps {
@@ -227,7 +227,7 @@ impl ChunkSection {
 	}
 
 	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) -> Option<u32> {
-		if id != 0 && self.blocks.is_none() {
+		if self.blocks.is_none() && id != 0 {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
 		if let Some(blocks) = &mut self.blocks {
@@ -363,7 +363,7 @@ if palette is not None and states_tag is not None:
 */
 
 pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
-	if let ListTag::Compound(mut states) = palette {
+	if let ListTag::Compound(states) = palette {
 		states.into_iter().map(|mut state| {
 			let name = map_decoder!(state; "Name" -> String);
 			// The "Properties" tag may not exist.
@@ -407,7 +407,7 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 	let blocklight = map_decoder!(section; "BlockLight" -> Option<ByteArray>);
 	let skylight = map_decoder!(section; "SkyLight" -> Option<ByteArray>);
 
-	let mut block_states = map_decoder!(section; "block_states" -> Option<Map>);
+	let block_states = map_decoder!(section; "block_states" -> Option<Map>);
 
 	let blocks = if let Some(mut block_states) = block_states {
 		// Now I need to transform the block_data and palette into registry IDs.
