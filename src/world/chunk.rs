@@ -75,56 +75,6 @@ macro_rules! map_encoder {
 // }
 
 #[derive(Clone)]
-pub struct Heightmaps {
-	motion_blocking: Vec<i64>,
-	motion_blocking_no_leaves: Vec<i64>,
-	ocean_floor: Vec<i64>,
-	ocean_floor_wg: Option<Vec<i64>>,
-	world_surface: Vec<i64>,
-	world_surface_wg: Option<Vec<i64>>,
-}
-
-impl DecodeNbt for Heightmaps {
-	type Error = McError;
-
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-		if let Tag::Compound(mut map) = nbt {
-			Ok(Heightmaps {
-				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Vec<i64>),
-				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Vec<i64>),
-				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Vec<i64>),
-				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Vec<i64>>),
-				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Vec<i64>),
-				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Vec<i64>>),
-			})
-		} else {
-			Err(McError::NbtDecodeError)
-		}
-	}
-}
-
-impl EncodeNbt for Heightmaps {
-	fn encode_nbt(self) -> Tag {
-		let mut map = Map::new();
-		map_encoder!(map;
-			"MOTION_BLOCKING" = self.motion_blocking;
-			"MOTION_BLOCKING_NO_LEAVES" = self.motion_blocking_no_leaves;
-			"OCEAN_FLOOR" = self.ocean_floor;
-			// "OCEAN_FLOOR_WG" = self.ocean_floor_wg;
-			"WORLD_SURFACE" = self.world_surface;
-			// "WORLD_SURFACE_WG" = self.world_surface_wg;
-		);
-		if let Some(ofwg) = self.ocean_floor_wg {
-			map_encoder!(map; "OCEAN_FLOOR_WG" = ofwg);
-		}
-		if let Some(wswg) = self.world_surface_wg {
-			map_encoder!(map; "WORLD_SURFACE_WG" = wswg);
-		}
-		Tag::Compound(map)
-	}
-}
-
-#[derive(Clone)]
 pub struct Chunk {
 	/// DataVersion
 	pub data_version: i32,
@@ -163,22 +113,6 @@ pub struct Chunk {
 	pub other: Map,
 }
 
-#[inline(always)]
-fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
-	(
-		coord.0 & 0xf,
-		coord.1 & 0xf,
-		coord.2 & 0xf,
-	)
-}
-
-#[inline(always)]
-const fn chunk_section_index(coord_y: i64, chunk_y: i64) -> usize {
-	let section_index = coord_y.div_euclid(16);
-	let adj_index = section_index - chunk_y;
-	adj_index as usize
-}
-
 impl Chunk {
 	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
@@ -199,6 +133,48 @@ impl Chunk {
 	}
 }
 
+impl EncodeNbt for Vec<BlockEntity> {
+	fn encode_nbt(self) -> Tag {
+		let entities = self.into_iter().map(|entity| {
+			let mut map = Map::new();
+			map_encoder!(map;
+				"id" = entity.id;
+				"keepPacked" = entity.keep_packed;
+				"x" = entity.x;
+				"y" = entity.y;
+				"z" = entity.z;
+			);
+			map.extend(entity.data);
+			map
+		}).collect::<Vec<Map>>();
+		Tag::List(ListTag::Compound(entities))
+	}
+}
+
+impl DecodeNbt for Vec<BlockEntity> {
+	type Error = McError;
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::List(list) = nbt {
+			if let ListTag::Compound(entities) = list {
+				entities.into_iter().map(|mut entity| {
+					Ok(BlockEntity {
+						id: map_decoder!(entity; "id" -> String),
+						keep_packed: map_decoder!(entity; "keepPacked" -> i8),
+						x: map_decoder!(entity; "x" -> i32),
+						y: map_decoder!(entity; "y" -> i32),
+						z: map_decoder!(entity; "z" -> i32),
+						data: entity,
+					})
+				}).collect::<Result<Vec<BlockEntity>, McError>>()
+			} else {
+				Ok(Vec::new())
+			}
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
 #[derive(Clone)]
 pub struct ChunkSection {
 	pub y: i8,
@@ -206,14 +182,6 @@ pub struct ChunkSection {
 	pub biomes: Option<Map>,
 	pub skylight: Option<Vec<i8>>,
 	pub blocklight: Option<Vec<i8>>,
-}
-
-#[inline(always)]
-fn chunk_yzx_index(x: i64, y: i64, z: i64) -> usize {
-	let local_x = x & 0xf;
-	let local_y = y & 0xf;
-	let local_z = z & 0xf;
-	(local_y*256 + local_z*16 + local_x) as usize
 }
 
 impl ChunkSection {
@@ -247,9 +215,80 @@ pub struct ChunkSections {
 }
 
 #[derive(Clone)]
+pub struct BlockEntity {
+	id: String,
+	keep_packed: i8,
+	x: i32,
+	y: i32,
+	z: i32,
+	data: Map,
+}
+
+#[derive(Clone)]
+pub struct Heightmaps {
+	motion_blocking: Vec<i64>,
+	motion_blocking_no_leaves: Vec<i64>,
+	ocean_floor: Vec<i64>,
+	ocean_floor_wg: Option<Vec<i64>>,
+	world_surface: Vec<i64>,
+	world_surface_wg: Option<Vec<i64>>,
+}
+
+impl EncodeNbt for Heightmaps {
+	fn encode_nbt(self) -> Tag {
+		let mut map = Map::new();
+		map_encoder!(map;
+			"MOTION_BLOCKING" = self.motion_blocking;
+			"MOTION_BLOCKING_NO_LEAVES" = self.motion_blocking_no_leaves;
+			"OCEAN_FLOOR" = self.ocean_floor;
+			// "OCEAN_FLOOR_WG" = self.ocean_floor_wg;
+			"WORLD_SURFACE" = self.world_surface;
+			// "WORLD_SURFACE_WG" = self.world_surface_wg;
+		);
+		if let Some(ofwg) = self.ocean_floor_wg {
+			map_encoder!(map; "OCEAN_FLOOR_WG" = ofwg);
+		}
+		if let Some(wswg) = self.world_surface_wg {
+			map_encoder!(map; "WORLD_SURFACE_WG" = wswg);
+		}
+		Tag::Compound(map)
+	}
+}
+
+impl DecodeNbt for Heightmaps {
+	type Error = McError;
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::Compound(mut map) = nbt {
+			Ok(Heightmaps {
+				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Vec<i64>),
+				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Vec<i64>),
+				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Vec<i64>),
+				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Vec<i64>>),
+				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Vec<i64>),
+				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Vec<i64>>),
+			})
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
+#[derive(Clone)]
 pub struct CarvingMasks {
 	air: Vec<i8>,
 	liquid: Vec<i8>,
+}
+
+impl EncodeNbt for CarvingMasks {
+	fn encode_nbt(self) -> Tag {
+		let mut map = Map::new();
+		map_encoder!(map;
+			"AIR" = self.air;
+			"LIQUID" = self.liquid;
+		);
+		Tag::Compound(map)
+	}
 }
 
 impl DecodeNbt for CarvingMasks {
@@ -269,98 +308,54 @@ impl DecodeNbt for CarvingMasks {
 	}
 }
 
-impl EncodeNbt for CarvingMasks {
-	fn encode_nbt(self) -> Tag {
-		let mut map = Map::new();
-		map_encoder!(map;
-			"AIR" = self.air;
-			"LIQUID" = self.liquid;
-		);
-		Tag::Compound(map)
-	}
+#[inline(always)]
+fn chunk_local_coord(coord: (i64, i64, i64)) -> (i64, i64, i64) {
+	(
+		coord.0 & 0xf,
+		coord.1 & 0xf,
+		coord.2 & 0xf,
+	)
 }
 
-#[derive(Clone)]
-pub struct BlockEntity {
-	id: String,
-	keep_packed: i8,
-	x: i32,
-	y: i32,
-	z: i32,
-	data: Map,
+#[inline(always)]
+const fn chunk_section_index(coord_y: i64, chunk_y: i64) -> usize {
+	let section_index = coord_y.div_euclid(16);
+	let adj_index = section_index - chunk_y;
+	adj_index as usize
 }
 
-impl DecodeNbt for Vec<BlockEntity> {
-	type Error = McError;
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
-		if let Tag::List(list) = nbt {
-			if let ListTag::Compound(entities) = list {
-				entities.into_iter().map(|mut entity| {
-					Ok(BlockEntity {
-						id: map_decoder!(entity; "id" -> String),
-						keep_packed: map_decoder!(entity; "keepPacked" -> i8),
-						x: map_decoder!(entity; "x" -> i32),
-						y: map_decoder!(entity; "y" -> i32),
-						z: map_decoder!(entity; "z" -> i32),
-						data: entity,
-					})
-				}).collect::<Result<Vec<BlockEntity>, McError>>()
-			} else {
-				Ok(Vec::new())
-			}
-		} else {
-			Err(McError::NbtDecodeError)
-		}
-	}
+#[inline(always)]
+fn chunk_yzx_index(x: i64, y: i64, z: i64) -> usize {
+	let local_x = x & 0xf;
+	let local_y = y & 0xf;
+	let local_z = z & 0xf;
+	(local_y*256 + local_z*16 + local_x) as usize
 }
 
-impl EncodeNbt for Vec<BlockEntity> {
-	fn encode_nbt(self) -> Tag {
-		let entities = self.into_iter().map(|entity| {
-			let mut map = Map::new();
-			map_encoder!(map;
-				"id" = entity.id;
-				"keepPacked" = entity.keep_packed;
-				"x" = entity.x;
-				"y" = entity.y;
-				"z" = entity.z;
-			);
-			map.extend(entity.data);
-			map
-		}).collect::<Vec<Map>>();
-		Tag::List(ListTag::Compound(entities))
-	}
+pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) -> usize {
+	// Subtract 1 because it's the bit length of the largest possible index
+	// If the palette size is 16, the bit length to represent
+	// 16 is 5, but the bit length to represent the largest index (15)
+	// is only 4.
+	let bitsize = (palette_size - 1).bit_length().max(4);
+	let vpl = (64 / bitsize) as u64;
+	let mask = 2u64.pow(bitsize) - 1;
+	let state_index = index as u64 / vpl;
+	let value_offset = ((index as u64).rem_euclid(vpl)) as u32 * bitsize;
+	let slot = states[state_index as usize] as u64;
+	((slot & (mask << value_offset)) >> value_offset) as usize
 }
 
-/*
-def extract_index(full_index, palette_size, block_states):
-	bitsize = max((palette_size - 1).bit_length(), 4)
-	#vpl = values per long
-	vpl = 64 // bitsize
-	mask = 2**bitsize-1
-	state_index = full_index // vpl
-	value_offset = (full_index % vpl) * bitsize
-	slot = int(block_states[state_index])
-	return (slot & (mask << value_offset)) >> value_offset
-
-	states_tag = section_tag['BlockStates']
-	palette = section_tag['Palette']
-
-	
-if palette is not None and states_tag is not None:
-	states = list()
-	blocks = numpy.ndarray(shape=(4096,),dtype=numpy.object_)
-	for v in palette.data:
-		name = v.Name.value
-		props = {}
-		if 'Properties' in v:
-			props = { k : val.value for k, val in v.Properties.data.items() }
-		states.append(blockregistry.register(name, props))
-	
-	for i in range(4096):
-		ind = extract_index(i, len(palette.data), states_tag.data)
-		blocks[i] = states[ind].unique_key
-*/
+fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i64], value: u32) {
+	let bitsize = (palette_size - 1).bit_length().max(4);
+	let vpl = (64 / bitsize) as u64;
+	let mask = 2u64.pow(bitsize) - 1;
+	let state_index = full_index as u64 / vpl;
+	let value_offset = ((full_index as u64).rem_euclid(vpl) as u32) * bitsize;
+	let state = states[state_index as usize] as u64;
+	let new_value = (state & (mask << value_offset).not()) | ((value as u64) << value_offset);
+	states[state_index as usize] = new_value as i64;
+}
 
 pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
 	if let ListTag::Compound(states) = palette {
@@ -386,20 +381,6 @@ pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
 	}
 }
 
-pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) -> usize {
-	// Subtract 1 because it's the bit length of the largest possible index
-	// If the palette size is 16, the bit length to represent
-	// 16 is 5, but the bit length to represent the largest index (15)
-	// is only 4.
-	let bitsize = (palette_size - 1).bit_length().max(4);
-	let vpl = (64 / bitsize) as u64;
-	let mask = 2u64.pow(bitsize) - 1;
-	let state_index = index as u64 / vpl;
-	let value_offset = ((index as u64).rem_euclid(vpl)) as u32 * bitsize;
-	let slot = states[state_index as usize] as u64;
-	((slot & (mask << value_offset)) >> value_offset) as usize
-}
-
 pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> Result<ChunkSection, McError> {
 	let y = map_decoder!(section; "Y" -> Byte);
 	// The following three may or may not exist.
@@ -423,6 +404,7 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 			}).collect::<Vec<u32>>();
 		if block_states.contains_key("data") {
 			// Extract indices from packed values.
+			// TODO: let data = map_decoder!(block_states; "data" -> Option<LongArray>);
 			let data = map_decoder!(block_states; "data" -> LongArray);
 			let data = (0..4096).into_iter().map(|full_index| {
 				let index = extract_palette_index(full_index, palette.len(), data.as_slice());
@@ -442,8 +424,6 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 		skylight,
 		blocks,
 	})
-	
-	// todo!()
 }
 
 pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Chunk> {
@@ -483,32 +463,7 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 	}
 }
 
-// def inject_index(full_index, palette_size, block_states, value):
-//     bitsize = max((palette_size - 1).bit_length(), 4)
-//     #vpl = values per long
-//     vpl = 64 // bitsize
-//     mask = 2**bitsize-1
-//     masked_value = value & mask
-//     #state_index is the index in the array of longs that our value will be injected to.
-//     state_index = full_index // vpl
-//     #value_offset represents the number of bits to shift to form our mask for setting the value.
-//     value_offset = (full_index % vpl) * bitsize
-//     #block_state will be a 64 bit integer
-//     block_state = block_states[state_index]
-//     #Injecting our value to the block_state
-//     block_states[state_index] = (block_state & ~(mask << value_offset)) | (value << value_offset)
-fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i64], value: u32) {
-	let bitsize = (palette_size - 1).bit_length().max(4);
-	let vpl = (64 / bitsize) as u64;
-	let mask = 2u64.pow(bitsize) - 1;
-	let state_index = full_index as u64 / vpl;
-	let value_offset = ((full_index as u64).rem_euclid(vpl) as u32) * bitsize;
-	let state = states[state_index as usize] as u64;
-	let new_value = (state & (mask << value_offset).not()) | ((value as u64) << value_offset);
-	states[state_index as usize] = new_value as i64;
-}
-
-fn create_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]>>) -> Map {
+fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]>>) -> Map {
 	if let Some(blocks) = blocks {
 		// Collect unique block-ids
 		let mut local_registry = HashMap::<u32, u32>::new();
@@ -575,7 +530,7 @@ fn encode_section(block_registry: &BlockRegistry, section: &ChunkSection) -> Map
 		let skylight = skylight.clone();
 		map_encoder!(map; "SkyLight" = skylight);
 	}
-	let block_states = create_block_states(block_registry, &section.blocks);
+	let block_states = encode_block_states(block_registry, &section.blocks);
 	map_encoder!(map; "block_states" = block_states);
 	map
 }
