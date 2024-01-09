@@ -38,15 +38,13 @@ impl BlockContainer {
 		let index = (y * (xs * zs)) + (z * xs) + x;
 		Some(index)
 	}
-}
 
-impl BlockStorage for BlockContainer {
 	fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
 		let index = self.block_index(x, y, z)?;
 		Some(self.blocks[index])
 	}
 
-	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<BlockState> {
+	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<&BlockState> {
 		let id = self.get_block_id(x, y, z)?;
 		self.block_registry.get(id)
 	}
@@ -58,7 +56,7 @@ impl BlockStorage for BlockContainer {
 		Some(old_id)
 	}
 
-	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<BlockState> {
+	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<&BlockState> {
 		let state = state.into();
 		let id = self.block_registry.register(state);
 		let old_id = self.set_block_id(x, y, z, id)?;

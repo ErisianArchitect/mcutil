@@ -520,7 +520,7 @@ fn create_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 				if let Some(state) = block_registry.get(*block_id) {
 					let id = palette.len() as u32;
 					local_registry.insert(*block_id, id);
-					palette.push(state);
+					palette.push(state.clone());
 					id
 				} else {
 					0

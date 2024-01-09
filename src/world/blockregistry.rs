@@ -71,9 +71,9 @@ impl BlockRegistry {
 	}
 
 	/// Gets a [BlockState] from the registry by ID.
-	pub fn get(&self, id: u32) -> Option<BlockState> {
+	pub fn get(&self, id: u32) -> Option<&BlockState> {
 		if (id as usize) < self.states.len() {
-			Some(self.states[id as usize].clone())
+			Some(&self.states[id as usize])
 		} else {
 			None
 		}
