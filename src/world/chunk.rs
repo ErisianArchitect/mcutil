@@ -417,7 +417,7 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 		// to do an iterator map to the block_registry IDs.
 		let palette = decode_palette(map_decoder!(block_states; "palette" -> ListTag))?;
 		// Register blocks.
-		let palette = palette.into_iter()
+		let palette = palette.iter()
 			.map(|state| {
 				block_registry.register(state)
 			}).collect::<Vec<u32>>();

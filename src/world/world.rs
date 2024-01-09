@@ -162,8 +162,7 @@ impl VirtualJavaWorld {
 	}
 
 	/// Set the block state at a coordinate. This will return the old block state.
-	pub fn set_block_state(&mut self, coord: BlockCoord, state: impl Into<BlockState>) -> Option<&BlockState> {
-		let state = state.into();
+	pub fn set_block_state(&mut self, coord: BlockCoord, state: &BlockState) -> Option<&BlockState> {
 		let id = self.block_registry.register(state);
 		self.set_block_id(coord, id).and_then(|id| {
 			self.block_registry.get(id)

@@ -56,8 +56,7 @@ impl BlockContainer {
 		Some(old_id)
 	}
 
-	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<&BlockState> {
-		let state = state.into();
+	fn set_block_state(&mut self, x: i64, y: i64, z: i64, state: &BlockState) -> Option<&BlockState> {
 		let id = self.block_registry.register(state);
 		let old_id = self.set_block_id(x, y, z, id)?;
 		self.block_registry.get(old_id)

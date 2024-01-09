@@ -44,19 +44,19 @@ impl BlockRegistry {
 
 	/// Registers the air [BlockState].
 	pub fn register_air(mut self) -> Self {
-		self.register(BlockState::air());
+		self.register(&BlockState::air());
 		self
 	}
 
 	/// Registers a [BlockState] with the registry and returns the ID.
 	/// The returned ID can be used to acquire a [BlockState].
-	pub fn register(&mut self, state: BlockState) -> u32 {
-		self.ids.get(&state)
+	pub fn register(&mut self, state: &BlockState) -> u32 {
+		self.ids.get(state)
 			.map(|&id| id)
 			.unwrap_or_else(|| {
 				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
-				self.states.push(state);
+				self.states.push(state.clone());
 				id
 			})
 	}
