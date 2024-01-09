@@ -40,7 +40,7 @@ pub struct VirtualJavaWorld {
 impl VirtualJavaWorld {
 	pub fn open(directory: impl AsRef<Path>) -> Self {
 		Self {
-			block_registry: BlockRegistry::new(),
+			block_registry: BlockRegistry::with_air(),
 			chunks: HashMap::new(),
 			regions: HashMap::new(),
 			directory: directory.as_ref().to_owned(),
