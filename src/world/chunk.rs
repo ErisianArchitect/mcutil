@@ -459,6 +459,9 @@ pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Ch
 fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]>>) -> Map {
 	if let Some(blocks) = blocks {
 		// Collect unique block-ids
+		// local_registry holds the mapping from old ids to new ids.
+		// This procedure maps out the block-states used into a palette and remaps
+		// the block ids to the new palette.
 		let mut local_registry = HashMap::<u32, u32>::new();
 		let mut palette = Vec::<BlockState>::new();
 		let local_ids = blocks.iter().map(|block_id| {
@@ -466,6 +469,8 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 				*local_id
 			} else {
 				if let Some(state) = block_registry.get(*block_id) {
+					// The id is the index of the item, so to get the proper id
+					// we get the length of the palette prior to adding the new block state.
 					let id = palette.len() as u32;
 					local_registry.insert(*block_id, id);
 					palette.push(state.clone());
@@ -478,9 +483,16 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 		// Pack 4096 block ids into array of i64.
 		// The buffer size for the long_array is calculated based on
 		// palette size.
+		// `palette.len() - 1`: The `- 1` is because The bitsize is the bit_length of
+		//	the maximum index, which is the same as the length of the palette minus 1.
 		let bitsize = (palette.len() - 1).bit_length().max(4);
+		// vpl: values-per-long
 		let vpl = (64 / bitsize) as u64;
-		let buffer_size = 4096/vpl + if 4096u64.rem_euclid(vpl) != 0 { 1 } else { 0 };
+		// (4096u64.rem_euclid(vpl) != 0 as u64)
+		// The buffer needs to be able to hold 4096 (16*16*16) elements.
+		// To find the packed buffer size, you simply divide 4096 by vpl, and if
+		// there is a remainder, add one.
+		let buffer_size = 4096/vpl + ((4096u64.rem_euclid(vpl) != 0) as u64);
 		let mut data = vec![0i64; buffer_size as usize];
 		local_ids.into_iter().enumerate().for_each(|(i, id)| {
 			inject_palette_index(i, palette.len(), &mut data, id);
