@@ -196,11 +196,7 @@ pub fn write_compound<W: Write>(writer: &mut W, value: &crate::nbt::Map, samelin
 			}?;
 			if index != last_index {
 				write!(writer, ",")?;
-				if sameline {
-					write!(writer, " ")?;
-				} else {
-					write!(writer, "\n")?;
-				}
+				write!(writer, "{}", if sameline { ' ' } else { '\n' });
 			}
 			Ok(())
 		})?;
