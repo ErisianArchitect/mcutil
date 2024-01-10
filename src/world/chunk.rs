@@ -521,9 +521,6 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 }
 
 fn encode_section(block_registry: &BlockRegistry, section: &ChunkSection) -> Map {
-	// In order to encode a ChunkSection into a HashMap<String, Tag>
-	// I will need to create a block state palette from the blocks
-	// in the section.
 	let mut map = Map::new();
 	map_encoder!(map; "Y" = section.y);
 	if let Some(biomes) = &section.biomes {
