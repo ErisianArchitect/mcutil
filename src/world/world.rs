@@ -30,6 +30,10 @@ fn make_arcmutex<T>(value: T) -> Arc<Mutex<T>> {
 type ArcChunk = Arc<Mutex<Chunk>>;
 type ArcRegion = Arc<Mutex<RegionFile>>;
 
+/*
+VirtualJavaWorld is for testing purposes. I plan on rewriting the entire
+system after I get a better idea of what I'm working with.
+*/
 pub struct VirtualJavaWorld {
 	pub block_registry: BlockRegistry,
 	pub chunks: HashMap<WorldCoord, ArcChunk>,
