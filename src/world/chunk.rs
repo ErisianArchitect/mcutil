@@ -403,11 +403,10 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 				block_registry.register(state)
 			}).collect::<Vec<u32>>();
 		map_decoder!(block_states; "data" -> Option<LongArray>).map(|blocks| {
-			let remapped = (0..4096).into_iter().map(|full_index| {
+			(0..4096).into_iter().map(|full_index| {
 				let index = extract_palette_index(full_index, palette.len(), &blocks);
 				palette[index]
-			}).collect::<Vec<u32>>();
-			remapped.into_boxed_slice()
+			}).collect::<Box<[u32]>>()
 		})
 	} else {
 		None
