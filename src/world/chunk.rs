@@ -109,6 +109,7 @@ pub struct Chunk {
 	pub lights: Option<ListTag>,
 	/// Entities
 	pub entities: Option<ListTag>,
+	/// All other unknown tags.
 	pub other: Map,
 }
 
@@ -337,6 +338,7 @@ pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) 
 	// 16 is 5, but the bit length to represent the largest index (15)
 	// is only 4.
 	let bitsize = (palette_size - 1).bit_length().max(4);
+	// vpl: values-per-long
 	let vpl = (64 / bitsize) as u64;
 	let mask = 2u64.pow(bitsize) - 1;
 	let state_index = index as u64 / vpl;
@@ -347,6 +349,7 @@ pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) 
 
 fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i64], value: u32) {
 	let bitsize = (palette_size - 1).bit_length().max(4);
+	// vpl: values-per-long
 	let vpl = (64 / bitsize) as u64;
 	let mask = 2u64.pow(bitsize) - 1;
 	let state_index = full_index as u64 / vpl;
@@ -550,7 +553,6 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 	let inhabited_time = chunk.inhabited_time;
 	let status = chunk.status.clone(); 
 	let block_entities = chunk.block_entities.clone();
-	let carving_masks = chunk.carving_masks.clone();
 	let heightmaps = chunk.heightmaps.clone();
 	let fluid_ticks = chunk.fluid_ticks.clone();
 	let block_ticks = chunk.block_ticks.clone();
@@ -571,7 +573,8 @@ pub fn encode_chunk(block_registry: &BlockRegistry, chunk: &Chunk) -> Map {
 		"PostProcessing" = post_processing;
 		"structures" = structures;
 	);
-	if let Some(carvingmasks) = carving_masks {
+	if let Some(carvingmasks) = &chunk.carving_masks {
+		let carvingmasks = carvingmasks.clone();
 		map_encoder!(map; "CarvingMasks" = carvingmasks);
 	}
 	if let Some(lights) = &chunk.lights {
