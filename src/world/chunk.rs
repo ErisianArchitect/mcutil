@@ -358,22 +358,23 @@ fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i6
 
 pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
 	if let ListTag::Compound(states) = palette {
-		states.into_iter().map(|mut state| {
-			let name = map_decoder!(state; "Name" -> String);
-			// The "Properties" tag may not exist.
-			let properties = if state.contains_key("Properties") {
-				let props = map_decoder!(state; "Properties" -> Map);
-				BlockProperties::from(props.into_iter().map(|(name, value)| {
-					if let Tag::String(value) = value {
-						Ok((name, value))
-					} else {
-						Err(McError::NbtDecodeError)
-					}
-				}).collect::<Result<Vec<(String, String)>, McError>>()?)
-			} else {
-				BlockProperties::none()
-			};
-			Ok(BlockState::new(name, properties))
+		states.into_iter().map(|state| {
+			BlockState::try_from_map(&state)
+			// let name = map_decoder!(state; "Name" -> String);
+			// // The "Properties" tag may not exist.
+			// let properties = if state.contains_key("Properties") {
+			// 	let props = map_decoder!(state; "Properties" -> Map);
+			// 	BlockProperties::from(props.into_iter().map(|(name, value)| {
+			// 		if let Tag::String(value) = value {
+			// 			Ok((name, value))
+			// 		} else {
+			// 			Err(McError::NbtDecodeError)
+			// 		}
+			// 	}).collect::<Result<Vec<(String, String)>, McError>>()?)
+			// } else {
+			// 	BlockProperties::none()
+			// };
+			// Ok(BlockState::new(name, properties))
 		}).collect::<Result<Vec<BlockState>, McError>>()
 	} else {
 		Err(McError::NbtDecodeError)
