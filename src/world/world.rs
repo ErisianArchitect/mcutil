@@ -62,7 +62,7 @@ impl VirtualJavaWorld {
 	}
 
 	/// Loads a region file into memory so that it IO can be performed.
-	pub fn load_region(&mut self, coord: WorldCoord) -> McResult<ArcRegion> {
+	pub fn get_or_load_region(&mut self, coord: WorldCoord) -> McResult<ArcRegion> {
 		if let Some(region) = self.regions.get(&coord) {
 			Ok(region.clone())
 		} else {
@@ -79,7 +79,7 @@ impl VirtualJavaWorld {
 	/// (This forces the loading of a chunk. If the chunk was already
 	/// loaded, the old chunk will be discarded.)
 	pub fn load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunk> {
-		let region = self.load_region(coord.region_coord())?;
+		let region = self.get_or_load_region(coord.region_coord())?;
 		let regionlock = region.lock();
 		if let Ok(mut regionfile) = regionlock {
 			let root = regionfile.read_data::<_, NamedTag>(coord.xz())?;
@@ -116,7 +116,7 @@ impl VirtualJavaWorld {
 			let chunklock = chunk.lock();
 			if let Ok(chunk) = chunklock {
 				let nbt = chunk.to_nbt(&self.block_registry);
-				let region = self.load_region(coord.region_coord())?;
+				let region = self.get_or_load_region(coord.region_coord())?;
 				let regionlock = region.lock();
 				if let Ok(mut regionfile) = regionlock {
 					let root = NamedTag::new(nbt);
