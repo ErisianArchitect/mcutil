@@ -39,24 +39,24 @@ impl BlockContainer {
 		Some(index)
 	}
 
-	fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
+	pub fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32> {
 		let index = self.block_index(x, y, z)?;
 		Some(self.blocks[index])
 	}
 
-	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<&BlockState> {
+	pub fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<&BlockState> {
 		let id = self.get_block_id(x, y, z)?;
 		self.block_registry.get(id)
 	}
 
-	fn set_block_id(&mut self, x: i64, y: i64, z: i64, id: u32) -> Option<u32> {
+	pub fn set_block_id(&mut self, x: i64, y: i64, z: i64, id: u32) -> Option<u32> {
 		let index = self.block_index(x, y, z)?;
 		let old_id = self.blocks[index];
 		self.blocks[index] = id;
 		Some(old_id)
 	}
 
-	fn set_block_state(&mut self, x: i64, y: i64, z: i64, state: &BlockState) -> Option<&BlockState> {
+	pub fn set_block_state(&mut self, x: i64, y: i64, z: i64, state: &BlockState) -> Option<&BlockState> {
 		let id = self.block_registry.register(state);
 		let old_id = self.set_block_id(x, y, z, id)?;
 		self.block_registry.get(old_id)
