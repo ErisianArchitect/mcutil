@@ -37,12 +37,18 @@ impl Ord for BlockProperty {
 	}
 }
 
-impl<S1: AsRef<str>, S2: AsRef<str>> Into<BlockProperty> for (S1, S2) {
-	fn into(self) -> BlockProperty {
+impl<S1: AsRef<str>, S2: AsRef<str>> From<(S1, S2)> for BlockProperty {
+	fn from(value: (S1, S2)) -> Self {
 		BlockProperty {
-			name: self.0.as_ref().to_owned(),
-			value: self.1.as_ref().to_owned(),
+			name: value.0.as_ref().to_owned(),
+			value: value.1.as_ref().to_owned(),
 		}
+	}
+}
+
+impl Into<(String, String)> for BlockProperty {
+	fn into(self) -> (String, String) {
+		(self.name, self.value)
 	}
 }
 
