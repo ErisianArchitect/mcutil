@@ -329,7 +329,7 @@ fn chunk_yzx_index(x: i64, y: i64, z: i64) -> usize {
 	let local_x = x & 0xf;
 	let local_y = y & 0xf;
 	let local_z = z & 0xf;
-	(local_y*256 + local_z*16 + local_x) as usize
+	((local_y<<8) | (local_z<<4) | local_x) as usize
 }
 
 pub fn extract_palette_index(index: usize, palette_size: usize, states: &[i64]) -> usize {
