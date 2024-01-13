@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use std::borrow::Borrow;
 use std::sync::atomic::{
 	AtomicU32,
 	Ordering,
@@ -44,26 +45,27 @@ impl BlockRegistry {
 
 	/// Registers the air [BlockState].
 	pub fn register_air(mut self) -> Self {
-		self.register(&BlockState::air());
+		self.register(BlockState::air());
 		self
 	}
 
 	/// Registers a [BlockState] with the registry and returns the ID.
 	/// The returned ID can be used to acquire a [BlockState].
-	pub fn register(&mut self, state: &BlockState) -> u32 {
-		self.ids.get(state)
+	pub fn register<T: Borrow<BlockState>>(&mut self, state: T) -> u32 {
+		self.ids.get(state.borrow())
 			.map(|&id| id)
 			.unwrap_or_else(|| {
+				let state = state.borrow().clone();
 				let id = self.states.len() as u32;
 				self.ids.insert(state.clone(), id);
-				self.states.push(state.clone());
+				self.states.push(state);
 				id
 			})
 	}
 
 	/// Finds the ID of a [BlockState] that has already been registered.
-	pub fn find(&self, state: &BlockState) -> Option<u32> {
-		if let Some(&id) = self.ids.get(state) {
+	pub fn find<T: Borrow<BlockState>>(&self, state: T) -> Option<u32> {
+		if let Some(&id) = self.ids.get(state.borrow()) {
 			Some(id)
 		} else {
 			None
