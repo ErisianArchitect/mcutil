@@ -68,6 +68,7 @@ pub fn octree_node_index<T: FirstBit>(x: T, y: T, z: T) -> usize {
 /// │321032103210│
 /// ╰────────────╯
 /// ```
+#[inline(always)]
 pub fn index_16_cube<T>(x: T, y: T, z: T) -> usize
 where
 T: ToUsize {
@@ -78,6 +79,7 @@ T: ToUsize {
 	(y << 8) | (z << 4) | x
 }
 
+#[inline(always)]
 pub fn index_32_square<T>(x: T, y: T) -> usize
 where
 T: ToUsize {
