@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem};
 
-use crate::{McResult, McError, nbt::tag::NamedTag};
+use crate::{McResult, McError, nbt::tag::NamedTag, math::bounds::Bounds2};
 use super::container::*;
 
 use super::{
@@ -125,6 +125,18 @@ impl VirtualJavaWorld {
 		} else {
 			McError::custom("Failed to lock region file.")
 		}
+	}
+
+	// TODO: 	I want to transform this function so that it can load
+	//			from (center, radius)
+	pub fn load_area<T: Into<Bounds2>>(&mut self, bounds: T, dimension: Dimension) -> McResult<()> {
+		let bounds: Bounds2 = bounds.into();
+		(bounds.min.y..bounds.max.y).try_for_each(|y| {
+			(bounds.min.x..bounds.max.x).try_for_each(|x| {
+				self.load_chunk(WorldCoord::new(x, y, dimension))?;
+				McResult::Ok(())
+			})
+		})
 	}
 
 	/// Get a chunk if it's already been loaded or otherwise load the chunk.
