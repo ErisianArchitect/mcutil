@@ -171,7 +171,7 @@ impl BlockState {
 	}
 
 	pub fn name(&self) -> &str {
-		return &self.name
+		&self.name
 	}
 
 	pub fn properties(&self) -> Option<&[BlockProperty]> {
