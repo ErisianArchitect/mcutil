@@ -37,23 +37,23 @@ struct VirtualChunk {
 	dirty: bool,
 }
 
-pub struct CubeNeighbors {
-	top: u32,	// +Y
-	bottom: u32,// -Y
-	east: u32,	// +X
-	west: u32,	// -X
-	south: u32,	// +Z
-	north: u32,	// -Z
+pub struct CubeNeighbors<T> {
+	top: T,	// +Y
+	bottom: T,// -Y
+	east: T,	// +X
+	west: T,	// -X
+	south: T,	// +Z
+	north: T,	// -Z
 }
 
-impl CubeNeighbors {
+impl<T> CubeNeighbors<T> {
 	pub fn new(
-		top: u32,
-		bottom: u32,
-		north: u32,
-		west: u32,
-		south: u32,
-		east: u32
+		top: T,
+		bottom: T,
+		north: T,
+		west: T,
+		south: T,
+		east: T
 	) -> Self {
 		Self {
 			top,
@@ -209,14 +209,27 @@ impl VirtualJavaWorld {
 		})
 	}
 
-	pub fn query_neighbors(&self, coord: BlockCoord) -> CubeNeighbors {
+	pub fn query_neighbor_ids(&self, coord: BlockCoord) -> CubeNeighbors<u32> {
 		macro_rules! get_neighbor {
 			($x:expr, $y:expr, $z:expr) => {
 				self.get_block_id(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension)).unwrap_or_default()
 			};
-			// ($direction:expr) => {
-			// 	self.get_block_id(coord.neighbor($direction)).unwrap_or_default()
-			// };
+		}
+		CubeNeighbors {
+			top: get_neighbor!(0, 1, 0),
+			bottom: get_neighbor!(0, -1, 0),
+			east: get_neighbor!(1, 0, 0),
+			west: get_neighbor!(-1, 0, 0),
+			south: get_neighbor!(0, 0, 1),
+			north: get_neighbor!(0, 0, -1),
+		}
+	}
+
+	pub fn query_neighbor_states(&self, coord: BlockCoord) -> CubeNeighbors<Option<&BlockState>> {
+		macro_rules! get_neighbor {
+			($x:expr, $y:expr, $z:expr) => {
+				self.get_block_state(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension))
+			};
 		}
 		CubeNeighbors {
 			top: get_neighbor!(0, 1, 0),
