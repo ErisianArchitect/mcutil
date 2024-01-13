@@ -1,4 +1,5 @@
 use crate::math::coord::*;
+use glam::i64::I64Vec3;
 
 pub enum CubeDirection {
 	Up,		// +Y
@@ -21,10 +22,30 @@ impl CubeDirection {
 			CubeDirection::East => (1, 0, 0),
 		}
 	}
+
+	#[inline(always)]
+	pub fn i64vec3(self) -> I64Vec3 {
+		self.into()
+	}
+}
+
+impl Into<I64Vec3> for CubeDirection {
+	#[inline(always)]
+	fn into(self) -> I64Vec3 {
+		I64Vec3::from(self.coord())
+	}
 }
 
 impl Into<Coord3> for CubeDirection {
-    fn into(self) -> Coord3 {
-        Coord3::from(self.coord())
-    }
+	#[inline(always)]
+	fn into(self) -> Coord3 {
+		Coord3::from(self.coord())
+	}
+}
+
+impl Into<(i64, i64, i64)> for CubeDirection {
+	#[inline(always)]
+	fn into(self) -> (i64, i64, i64) {
+		self.coord()
+	}
 }
