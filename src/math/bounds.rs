@@ -1,3 +1,4 @@
+#![allow(unused)]
 use super::coord::*;
 pub struct Bounds2 {
 	min: Coord2,
