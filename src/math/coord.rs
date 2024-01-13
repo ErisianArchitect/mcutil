@@ -1,3 +1,5 @@
+use glam::I64Vec3;
+
 use crate::world::block::CubeDirection;
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -295,7 +297,86 @@ impl BlockCoord {
 
 	#[inline(always)]
 	pub fn neighbor(self, direction: CubeDirection) -> Self {
-		let (x, y, z) = direction.coord();
+		self + direction
+	}
+}
+
+impl std::ops::Add<(i64, i64, i64)> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: (i64, i64, i64)) -> Self::Output {
+		let (x,y,z) = rhs;
 		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<(i64,i64,i64)> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: (i64,i64,i64)) -> Self::Output {
+		let (x,y,z) = rhs;
+		Self::new(self.x - x, self.y - y, self.z - z, self.dimension)
+	}
+}
+
+impl std::ops::Add<Coord3> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: Coord3) -> Self::Output {
+		let (x,y,z) = rhs.xyz();
+		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<Coord3> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: Coord3) -> Self::Output {
+		let (x,y,z) = rhs.xyz();
+		Self::new(self.x - x, self.y - y, self.z - z, self.dimension)
+	}
+}
+
+impl std::ops::Add<I64Vec3> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: I64Vec3) -> Self::Output {
+		let (x,y,z):(i64,i64,i64) = rhs.into();
+		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<I64Vec3> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: I64Vec3) -> Self::Output {
+		let (x,y,z):(i64,i64,i64) = rhs.into();
+		Self::new(self.x - x, self.y - y, self.z - z, self.dimension)
+	}
+}
+
+impl std::ops::Add<CubeDirection> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: CubeDirection) -> Self::Output {
+		let (x,y,z) = rhs.coord();
+		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<CubeDirection> for BlockCoord {
+	type Output = BlockCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: CubeDirection) -> Self::Output {
+		let (x,y,z) = rhs.coord();
+		Self::new(self.x - x, self.y - y, self.z - z, self.dimension)
 	}
 }
