@@ -10,6 +10,25 @@ pub enum Dimension {
 	Other(u32),
 }
 
+pub enum Cardinal {
+	East,	// +X
+	West,	// -X
+	South,	// +Z
+	North,	// -Z
+}
+
+impl Cardinal {
+	#[inline(always)]
+	pub fn coord(self) -> (i64, i64) {
+		match self {
+			Cardinal::East => (1, 0),
+			Cardinal::West => (-1, 0),
+			Cardinal::South => (0, 1),
+			Cardinal::North => (0, -1),
+		}
+	}
+}
+
 impl Dimension {
 	#[inline(always)]
 	pub fn blockcoord(self, x: i64, y: i64, z: i64) -> BlockCoord {
@@ -298,6 +317,46 @@ impl BlockCoord {
 	#[inline(always)]
 	pub fn neighbor(self, direction: CubeDirection) -> Self {
 		self + direction
+	}
+}
+
+impl std::ops::Add<(i64, i64)> for WorldCoord {
+	type Output = WorldCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: (i64, i64)) -> Self::Output {
+		let (x,z) = rhs;
+		Self::new(self.x + x, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<(i64,i64)> for WorldCoord {
+	type Output = WorldCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: (i64,i64)) -> Self::Output {
+		let (x,z) = rhs;
+		Self::new(self.x - x, self.z - z, self.dimension)
+	}
+}
+
+impl std::ops::Add<Cardinal> for WorldCoord {
+	type Output = WorldCoord;
+
+	#[inline(always)]
+	fn add(self, rhs: Cardinal) -> Self::Output {
+		let (x,z) = rhs.coord();
+		Self::new(self.x + x, self.z + z, self.dimension)
+	}
+}
+
+impl std::ops::Sub<Cardinal> for WorldCoord {
+	type Output = WorldCoord;
+
+	#[inline(always)]
+	fn sub(self, rhs: Cardinal) -> Self::Output {
+		let (x,z) = rhs.coord();
+		Self::new(self.x - x, self.z - z, self.dimension)
 	}
 }
 
