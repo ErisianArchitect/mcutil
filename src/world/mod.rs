@@ -5,3 +5,4 @@ pub mod blockregistry;
 pub mod blockstate;
 pub mod world;
 pub mod container;
+pub mod block;
