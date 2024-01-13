@@ -72,7 +72,16 @@ macro_rules! map_encoder {
 // 	y: i32,
 // 	z: i32,
 // }
-
+/*
+Chunks that are written to a region file are formatted a certain way.
+They are isolated from the world that they come from, and as such they
+contain data from that world that may not necessarily be contained in a chunk.
+That is to say, it's likely that some data in a region-chunk can be transformed
+into a higher level structure within the world structure. The heighmaps are a
+good example. It may perhaps be more optimal in-engine for the world to
+consider the Chunk struct to be mere data and not suitable for representation
+in engine, so the engine may choose a different representation.
+*/
 #[derive(Clone)]
 pub struct Chunk {
 	/// DataVersion
