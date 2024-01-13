@@ -19,6 +19,7 @@ use super::{
 			RegionManager,
 		},
 	},
+	block::CubeDirection,
 };
 use crate::math::coord::*;
 
@@ -29,6 +30,41 @@ fn make_arcmutex<T>(value: T) -> Arc<Mutex<T>> {
 
 type ArcChunk = Arc<Mutex<Chunk>>;
 type ArcRegion = Arc<Mutex<RegionFile>>;
+type ArcVirtual = Arc<Mutex<VirtualChunk>>;
+
+struct VirtualChunk {
+	chunk: Chunk,
+	dirty: bool,
+}
+
+pub struct CubeNeighbors {
+	top: u32,	// +Y
+	bottom: u32,// -Y
+	east: u32,	// +X
+	west: u32,	// -X
+	south: u32,	// +Z
+	north: u32,	// -Z
+}
+
+impl CubeNeighbors {
+	pub fn new(
+		top: u32,
+		bottom: u32,
+		north: u32,
+		west: u32,
+		south: u32,
+		east: u32
+	) -> Self {
+		Self {
+			top,
+			bottom,
+			north,
+			west,
+			south,
+			east
+		}
+	}
+}
 
 /*
 VirtualJavaWorld is for testing purposes. I plan on rewriting the entire
@@ -172,7 +208,37 @@ impl VirtualJavaWorld {
 			self.block_registry.get(id)
 		})
 	}
+
+	pub fn query_neighbors(&self, coord: BlockCoord) -> CubeNeighbors {
+		macro_rules! get_neighbor {
+			($x:expr, $y:expr, $z:expr) => {
+				self.get_block_id(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension)).unwrap_or_default()
+			};
+			// ($direction:expr) => {
+			// 	self.get_block_id(coord.neighbor($direction)).unwrap_or_default()
+			// };
+		}
+		CubeNeighbors {
+			top: get_neighbor!(0, 1, 0),
+			bottom: get_neighbor!(0, -1, 0),
+			east: get_neighbor!(1, 0, 0),
+			west: get_neighbor!(-1, 0, 0),
+			south: get_neighbor!(0, 0, 1),
+			north: get_neighbor!(0, 0, -1),
+		}
+	}
 }
+
+/*
+Plan for new JavaWorld impl:
+Choice between sparse and fixed bounds.
+	Sparse: Chunks are loaded based on coordinates and any chunk can be loaded at any time.
+	Fixed Bounds: Chunks within a fixed area are loaded into the world.
+There are other things present in chunks, such as entities. I should do some research to determine
+if I can/should integrate chunk entities with some sort of storage within the world itself, similar to how the palette
+in subchunks is remapped.
+I want to be able to use this library to inspect/edit the contents of a chest, for example.
+*/
 
 /*
 World:
