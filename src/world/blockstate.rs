@@ -1,6 +1,65 @@
+use std::fmt::Display;
+
 use sorted_vec::SortedVec;
 
 use crate::{nbt::{tag::*, Map}, McResult, McError};
+
+/// Create a [BlockState].
+/// 
+/// Syntax:
+/// ```no_run,rust
+/// blockstate!(air)
+/// // Becomes
+/// BlockState::new("minecraft:air", BlockProperties::none())
+/// 
+/// blockstate!(namespace:tile[prop1="string_literal", prop2=identifier, prop3=10])
+/// // Becomes
+/// BlockState::new("namespace:tile", BlockProperties::from([
+/// 	("prop1".to_owned(), "string_literal".to_owned()),
+/// 	("prop2".to_owned(), "identifier".to_owned()),
+/// 	("prop3".to_owned(), "10".to_owned())
+/// ]))
+/// ```
+#[macro_export]
+macro_rules! blockstate {
+	($id:ident) => {
+		// We assume 'minecraft' namespace by default.
+		blockstate!(minecraft:$id)
+	};
+	($id:ident [ $($name:tt = $value:tt),+$(,)? ]) => {
+		blockstate!(minecraft:$id[ $($name = $value),+ ])
+	};
+	($namespace:ident:$id:ident) => {
+		$crate::world::blockstate::BlockState::new(
+			format!("{}:{}", stringify!($namespace), stringify!($id)),
+			$crate::world::blockstate::BlockProperties::none()
+		)
+	};
+	($namespace:ident:$id:ident [ $($name:tt = $value:tt),+$(,)? ]) => {
+		$crate::world::blockstate::BlockState::new(
+			format!("{}:{}", stringify!($namespace), stringify!($id)),
+			$crate::world::blockstate::BlockProperties::from([
+				$(
+					(
+						$crate::blockstate!(@decode_token; $name),
+						$crate::blockstate!(@decode_token; $value)
+					),
+				)+
+			])
+		)
+	};
+	(@decode_token; $value:literal) => {
+		$value.to_string()
+	};
+	(@decode_token; $value:ident) => {
+		stringify!($value).to_owned()
+	};
+	(@decode_token; $value:expr) => {
+		($value).to_string()
+	};
+}
+
+pub use crate::blockstate;
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct BlockProperty {
@@ -9,10 +68,10 @@ pub struct BlockProperty {
 }
 
 impl BlockProperty {
-	pub fn new(name: String, value: String) -> Self {
+	pub fn new<S1: AsRef<str>, S2: AsRef<str>>(name: S1, value: S2) -> Self {
 		Self {
-			name,
-			value,
+			name: name.as_ref().to_owned(),
+			value: value.as_ref().to_owned(),
 		}
 	}
 
@@ -107,7 +166,8 @@ impl BlockState {
 	}
 
 	pub fn air() -> Self {
-		Self::new("minecraft:air", BlockProperties::none())
+		blockstate!(air)
+		// Self::new("minecraft:air", BlockProperties::none())
 	}
 
 	pub fn name(&self) -> &str {
@@ -165,5 +225,38 @@ impl EncodeNbt for BlockState {
 	fn encode_nbt(self) -> Tag {
 		let map = self.to_map();
 		Tag::Compound(map)
+	}
+}
+
+impl Display for BlockState {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", &self.name)?;
+		if !self.properties.is_empty() {
+			write!(f, "{}", &self.properties)?;
+		}
+		Ok(())
+	}
+}
+
+impl Display for BlockProperties {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		if let Some(props) = &self.properties {
+			write!(f, "[")?;
+			let last = props.len() - 1;
+			props.iter()
+				.enumerate()
+				.try_for_each(|(index, prop)| {
+					write!(f, "{}={}", &prop.name, &prop.value)?;
+					if index < last {
+						write!(f, ", ")?;
+					}
+					Ok(())
+				})?;
+			write!(f, "]")?;
+			Ok(())
+		} else {
+			write!(f, "[]")?;
+			Ok(())
+		}
 	}
 }
