@@ -23,4 +23,4 @@ byteorder = "1.4.3"
 macrocraft = { path = "./macrocraft" }
 sorted-vec = "0.8.2"
 rand = "0.8.5"
-# glam = "0.25.0"
+glam = "0.25.0"
