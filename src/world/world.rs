@@ -129,7 +129,7 @@ impl VirtualJavaWorld {
 
 	// TODO: 	I want to transform this function so that it can load
 	//			from (center, radius)
-	pub fn load_area<T: Into<Bounds2>>(&mut self, bounds: T, dimension: Dimension) -> McResult<()> {
+	pub fn load_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) -> McResult<()> {
 		let bounds: Bounds2 = bounds.into();
 		(bounds.min.y..bounds.max.y).try_for_each(|y| {
 			(bounds.min.x..bounds.max.x).try_for_each(|x| {
