@@ -1,3 +1,5 @@
+use crate::world::block::CubeDirection;
+
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Dimension {
 	Overworld,
@@ -289,5 +291,11 @@ impl BlockCoord {
 			z: self.z.div_euclid(512),
 			dimension: self.dimension,
 		}
+	}
+
+	#[inline(always)]
+	pub fn neighbor(self, direction: CubeDirection) -> Self {
+		let (x, y, z) = direction.coord();
+		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
 	}
 }
