@@ -391,6 +391,18 @@ impl VirtualJavaWorld {
 	pub fn copy_blocks_into(&self, origin: BlockCoord, container: &mut BlockContainer) {
 		todo!()
 	}
+
+	pub fn fill_area_id(&mut self, dimension: Dimension, bounds: Bounds3, id: u32) {
+		bounds.for_each(|coord| {
+			let (x,y,z): (i64, i64, i64) = coord.into();
+			self.set_block_id(dimension.blockcoord(x, y, z), id);
+		});
+	}
+
+	pub fn fill_area_state<T: Borrow<BlockState>>(&mut self, dimension: Dimension, bounds: Bounds3, state: T) {
+		let id = self.block_registry.register(state);
+		self.fill_area_id(dimension, bounds, id);
+	}
 }
 
 /*
