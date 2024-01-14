@@ -332,6 +332,8 @@ impl VirtualJavaWorld {
 					if old_id != id {
 						slot.mark_dirty();
 					}
+				} else {
+					slot.mark_dirty();
 				}
 				return old_id
 			}
