@@ -47,7 +47,17 @@ impl Bounds2 {
 	}
 
 	pub fn size<R: From<I64Vec2>>(&self) -> R {
-		R::from(self.max - self.min)
+		let x = self.max.x - self.min.x + 1;
+		let y = self.max.y - self.min.y + 1;
+		R::from(i64vec2(x, y))
+	}
+
+	pub fn for_each<F: FnMut(I64Vec2) -> ()>(&self, mut f: F) {
+		(self.min.y..self.max.y).for_each(|y| {
+			(self.min.x..self.max.x).for_each(|x| {
+				f(i64vec2(x, y));
+			})
+		})
 	}
 }
 
@@ -110,8 +120,22 @@ impl Bounds3 {
 	}
 
 	pub fn size<R: From<I64Vec3>>(&self) -> R {
-		R::from(self.max - self.min)
+		let x = self.max.x - self.min.x + 1;
+		let y = self.max.y - self.min.y + 1;
+		let z = self.max.z - self.min.z + 1;
+		R::from(i64vec3(x, y, z))
 	}
+
+	pub fn for_each<F: FnMut(I64Vec3) -> ()>(&self, mut f: F) {
+		(self.min.y..=self.max.y).for_each(|y| {
+			(self.min.z..=self.max.z).for_each(|z| {
+				(self.min.x..=self.max.x).for_each(|x| {
+					f(i64vec3(x, y, z));
+				})
+			})
+		})
+	}
+
 }
 
 // impl<T: Into<I64Vec2>,  It: IntoIterator<Item = T>> From<It> for Bounds2 {
