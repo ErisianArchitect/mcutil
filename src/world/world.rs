@@ -5,7 +5,9 @@
 
 use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem, borrow::Borrow};
 
-use crate::{McResult, McError, nbt::tag::NamedTag, math::bounds::Bounds2};
+use glam::I64Vec3;
+
+use crate::{McResult, McError, nbt::tag::NamedTag, math::bounds::{Bounds2, Bounds3}};
 use super::container::*;
 
 use super::{
@@ -26,15 +28,6 @@ use crate::math::coord::*;
 #[inline(always)]
 fn make_arcmutex<T>(value: T) -> Arc<Mutex<T>> {
 	Arc::new(Mutex::new(value))
-}
-
-type ArcChunk = Arc<Mutex<Chunk>>;
-type ArcRegion = Arc<Mutex<RegionFile>>;
-type ArcVirtual = Arc<Mutex<VirtualChunk>>;
-
-struct VirtualChunk {
-	chunk: Chunk,
-	dirty: bool,
 }
 
 pub struct CubeNeighbors<T> {
@@ -388,6 +381,15 @@ impl VirtualJavaWorld {
 
 	pub fn is_chunk_loaded(&self, coord: WorldCoord) -> bool {
 		self.chunks.contains_key(&coord)
+	}
+
+	pub fn copy_blocks(&self, dimension: Dimension, bounds: Bounds3) -> BlockContainer {
+		let size = bounds.size::<I64Vec3>();
+		todo!()
+	}
+
+	pub fn copy_blocks_into(&self, origin: BlockCoord, container: &mut BlockContainer) {
+		todo!()
 	}
 }
 
