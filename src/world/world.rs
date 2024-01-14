@@ -81,13 +81,35 @@ impl<T> CubeNeighbors<T> {
 // 	LoadOrCreate,
 // }
 
-struct RegionSlot {
-	region: ArcRegion,
+pub struct RegionSlot {
+	region: RegionFile,
 	load_count: usize,
 }
 
-struct ChunkSlot {
-	pub chunk: ArcChunk,
+impl RegionSlot {
+	pub fn new(region: RegionFile) -> Self {
+		Self {
+			region,
+			load_count: 0,
+		}
+	}
+
+	pub fn arc_new(region: RegionFile) -> ArcRegionSlot {
+		make_arcmutex(Self::new(region))
+	}
+
+	pub fn increment(&mut self) {
+		self.load_count += 1;
+	}
+
+	pub fn decrement(&mut self) -> bool {
+		self.load_count = self.load_count.checked_sub(1).unwrap_or_default();
+		self.load_count == 0
+	}
+}
+
+pub struct ChunkSlot {
+	pub chunk: Chunk,
 	/// Determines if the chunk has been altered since last saved.
 	pub dirty: bool,
 }
@@ -95,9 +117,13 @@ struct ChunkSlot {
 impl ChunkSlot {
 	pub fn new(chunk: Chunk) -> Self {
 		Self {
-			chunk: make_arcmutex(chunk),
+			chunk,
 			dirty: false,
 		}
+	}
+
+	pub fn arc_new(chunk: Chunk) -> ArcChunkSlot {
+		make_arcmutex(Self::new(chunk))
 	}
 
 	#[inline(always)]
@@ -106,14 +132,17 @@ impl ChunkSlot {
 	}
 }
 
+type ArcChunkSlot = Arc<Mutex<ChunkSlot>>;
+type ArcRegionSlot = Arc<Mutex<RegionSlot>>;
+
 /*
 VirtualJavaWorld is for testing purposes. I plan on rewriting the entire
 system after I get a better idea of what I'm working with.
 */
 pub struct VirtualJavaWorld {
 	pub block_registry: BlockRegistry,
-	pub chunks: HashMap<WorldCoord, ArcChunk>,
-	pub regions: HashMap<WorldCoord, ArcRegion>,
+	pub chunks: HashMap<WorldCoord, ArcChunkSlot>,
+	pub regions: HashMap<WorldCoord, ArcRegionSlot>,
 	pub directory: PathBuf,
 }
 
@@ -142,30 +171,37 @@ impl VirtualJavaWorld {
 	}
 
 	/// Loads a region file into memory so that it IO can be performed.
-	pub fn get_or_load_region(&mut self, coord: WorldCoord) -> McResult<ArcRegion> {
-		if let Some(region) = self.regions.get(&coord) {
-			Ok(region.clone())
+	pub fn get_or_load_region(&mut self, coord: WorldCoord) -> McResult<ArcRegionSlot> {
+		if let Some(slot) = self.regions.get(&coord) {
+			Ok(slot.clone())
 		} else {
 			let regiondir = self.get_region_directory(coord.dimension);
 			let regname = format!("r.{}.{}.mca", coord.x, coord.z);
 			let regfilepath = regiondir.join(regname);
-			let regionfile = make_arcmutex(RegionFile::open_or_create(regfilepath)?);
-			self.regions.insert(coord, regionfile.clone());
-			Ok(regionfile)
+			let regionfile = RegionFile::open_or_create(regfilepath)?;
+			let slot = RegionSlot::arc_new(regionfile);
+			self.regions.insert(coord, slot.clone());
+			Ok(slot)
 		}
 	}
 
 	/// Loads a chunk into the world for editing.
 	/// (This forces the loading of a chunk. If the chunk was already
 	/// loaded, the old chunk will be discarded.)
-	pub fn load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunk> {
+	pub fn load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunkSlot> {
 		let region = self.get_or_load_region(coord.region_coord())?;
-		let regionlock = region.lock();
-		if let Ok(mut regionfile) = regionlock {
-			let root = regionfile.read_data::<_, NamedTag>(coord.xz())?;
-			let chunk = make_arcmutex(decode_chunk(&mut self.block_registry, root.tag)?);
-			self.chunks.insert(coord, chunk.clone());
-			Ok(chunk)
+		let reglock = region.lock();
+		if let Ok(mut regionlock) = reglock {
+			let root = regionlock.region.read_data::<_, NamedTag>(coord.xz())?;
+			let chunk = decode_chunk(&mut self.block_registry, root.tag)?;
+			let slot = ChunkSlot::arc_new(chunk);
+			let old = self.chunks.insert(coord, slot.clone());
+			// If there was already a chunk loaded at this coord, there's no need
+			// for incrementation.
+			if old.is_none() {
+				regionlock.increment();
+			}
+			Ok(slot)
 		} else {
 			McError::custom("Failed to lock region file.")
 		}
@@ -184,42 +220,39 @@ impl VirtualJavaWorld {
 	}
 
 	/// Get a chunk if it's already been loaded or otherwise load the chunk.
-	pub fn get_or_load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunk> {
-		if let Some(chunk) = self.get_chunk(coord) {
-			Ok(chunk)
+	pub fn get_or_load_chunk(&mut self, coord: WorldCoord) -> McResult<ArcChunkSlot> {
+		if let Some(slot) = self.get_chunk(coord) {
+			Ok(slot)
 		} else {
 			self.load_chunk(coord)
 		}
 	}
 
 	/// Get a chunk (if it has been loaded).
-	pub fn get_chunk(&self, coord: WorldCoord) -> Option<ArcChunk> {
-		if let Some(chunk) = self.chunks.get(&coord) {
-			Some(chunk.clone())
-		} else {
-			None
-		}
+	pub fn get_chunk(&self, coord: WorldCoord) -> Option<ArcChunkSlot> {
+		self.chunks.get(&coord).map(|slot| slot.clone())
 	}
 
 	/// Attempts to save a chunk (assuming the chunk has already been loaded)
 	pub fn save_chunk(&mut self, coord: WorldCoord) -> McResult<()> {
-		if let Some(chunk) = self.chunks.get(&coord) {
-			let chunk = chunk.clone();
-			let chunklock = chunk.lock();
-			if let Ok(chunk) = chunklock {
-				let nbt = chunk.to_nbt(&self.block_registry);
+		if let Some(slot) = self.get_chunk(coord) {
+			if let Ok(mut slot) = slot.lock() {
+				if !slot.dirty {
+					return Ok(());
+				}
 				let region = self.get_or_load_region(coord.region_coord())?;
-				let regionlock = region.lock();
-				if let Ok(mut regionfile) = regionlock {
+				let reglock = region.lock();
+				if let Ok(mut region) = reglock {
+					let nbt = slot.chunk.to_nbt(&self.block_registry);
 					let root = NamedTag::new(nbt);
-					regionfile.write_with_utcnow(coord.xz(), &root)?;
-					return Ok(())
+					region.region.write_with_utcnow(coord.xz(), &root)?;
+					slot.dirty = false;
+					return Ok(());
 				}
 			}
-			Err(McError::FailedToSaveChunk)
-		} else {
-			Ok(())
+			return Err(McError::FailedToSaveChunk)
 		}
+		Ok(())
 	}
 
 	pub fn save_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) -> McResult<()> {
@@ -240,8 +273,26 @@ impl VirtualJavaWorld {
 	}
 
 	/// Remove a chunk from internal storage.
-	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunk> {
-		self.chunks.remove(&coord)
+	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunkSlot> {
+		if self.chunks.contains_key(&coord) {
+			let removed = self.chunks.remove(&coord);
+			let mut unload_region: bool = false;
+			{
+				let region = self.regions.get(&coord.region_coord());
+				if let Some(region) = region {
+					let reglock = region.lock();
+					if let Ok(mut region) = reglock {
+						unload_region = region.decrement();
+					}
+				}
+			}
+			if unload_region {
+				self.regions.remove(&coord.region_coord());
+			}
+			removed
+		} else {
+			None
+		}
 	}
 
 	pub fn unload_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) {
@@ -261,9 +312,9 @@ impl VirtualJavaWorld {
 
 	/// Get a block id at the given coordinate.
 	pub fn get_block_id(&self, coord: BlockCoord) -> Option<u32> {
-		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
-			if let Ok(chunk) = chunk.lock() {
-				return chunk.get_block_id(coord.xyz());
+		if let Some(slot) = self.get_chunk(coord.chunk_coord()) {
+			if let Ok(slot) = slot.lock() {
+				return slot.chunk.get_block_id(coord.xyz());
 			}
 		}
 		None
@@ -281,9 +332,15 @@ impl VirtualJavaWorld {
 	/// Set a block id, returning the old block id.
 	/// (This function does not check that the ids are the same)
 	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
-		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
-			if let Ok(mut chunk) = chunk.lock() {
-				return chunk.set_block_id(coord.xyz(), id);
+		if let Some(slot) = self.get_chunk(coord.chunk_coord()) {
+			if let Ok(mut slot) = slot.lock() {
+				let old_id = slot.chunk.set_block_id(coord.xyz(), id);
+				if let Some(old_id) = old_id {
+					if old_id != id {
+						slot.mark_dirty();
+					}
+				}
+				return old_id
 			}
 		}
 		None
