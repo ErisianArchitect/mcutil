@@ -6,6 +6,7 @@ pub mod error;
 pub mod math;
 pub mod macros;
 pub mod util;
+pub mod meshing;
 
 pub use flate2;
 
