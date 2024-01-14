@@ -102,8 +102,9 @@ macro_rules! __get_set_impl {
 
 			fn get_bitmask(self, mask: Range<usize>) -> Self {
 				let mut result = 0;
-				for i in mask.clone() {
-					result = result.set_bit(i - mask.start, self.get_bit(i));
+				let start = mask.start;
+				for i in mask {
+					result = result.set_bit(i - start, self.get_bit(i));
 				}
 				result
 			}
