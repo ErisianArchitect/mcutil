@@ -244,6 +244,7 @@ pub struct BlockEntity {
 	pub data: Map,
 }
 
+#[derive(Clone)]
 pub struct Heightmap {
 	pub map: Vec<i64>
 }
@@ -268,6 +269,24 @@ impl Heightmap {
 	}
 }
 
+impl DecodeNbt for Heightmap {
+	type Error = McError;
+
+	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+		if let Tag::LongArray(data) = nbt {
+			Ok(Heightmap::from(data))
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
+impl EncodeNbt for Heightmap {
+	fn encode_nbt(self) -> Tag {
+		Tag::LongArray(self.map)
+	}
+}
+
 impl From<Vec<i64>> for Heightmap {
 	fn from(value: Vec<i64>) -> Self {
 		Self { map: value }
@@ -282,12 +301,12 @@ impl Into<Vec<i64>> for Heightmap {
 
 #[derive(Clone)]
 pub struct Heightmaps {
-	pub motion_blocking: Vec<i64>,
-	pub motion_blocking_no_leaves: Vec<i64>,
-	pub ocean_floor: Vec<i64>,
-	pub ocean_floor_wg: Option<Vec<i64>>,
-	pub world_surface: Vec<i64>,
-	pub world_surface_wg: Option<Vec<i64>>,
+	pub motion_blocking: Heightmap,
+	pub motion_blocking_no_leaves: Heightmap,
+	pub ocean_floor: Heightmap,
+	pub ocean_floor_wg: Option<Heightmap>,
+	pub world_surface: Heightmap,
+	pub world_surface_wg: Option<Heightmap>,
 }
 
 impl EncodeNbt for Heightmaps {
@@ -317,12 +336,12 @@ impl DecodeNbt for Heightmaps {
 	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
 		if let Tag::Compound(mut map) = nbt {
 			Ok(Heightmaps {
-				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Vec<i64>),
-				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Vec<i64>),
-				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Vec<i64>),
-				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Vec<i64>>),
-				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Vec<i64>),
-				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Vec<i64>>),
+				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Heightmap),
+				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Heightmap),
+				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Heightmap),
+				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Heightmap>),
+				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Heightmap),
+				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Heightmap>),
 			})
 		} else {
 			Err(McError::NbtDecodeError)
