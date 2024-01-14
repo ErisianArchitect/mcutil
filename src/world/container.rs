@@ -1,10 +1,12 @@
+use std::borrow::Borrow;
+
 use super::{blockregistry::BlockRegistry, blockstate::BlockState};
 
 pub trait BlockStorage {
 	fn get_block_id(&self, x: i64, y: i64, z: i64) -> Option<u32>;
 	fn get_block_state(&self, x: i64, y: i64, z: i64) -> Option<BlockState>;
 	fn set_block_id(&mut self, x: i64, y: i64, z: i64, id: u32) -> Option<u32>;
-	fn set_block_state<T: Into<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<BlockState>;
+	fn set_block_state<T: Borrow<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<BlockState>;
 }
 
 pub struct BlockContainer {
@@ -56,8 +58,8 @@ impl BlockContainer {
 		Some(old_id)
 	}
 
-	pub fn set_block_state(&mut self, x: i64, y: i64, z: i64, state: &BlockState) -> Option<&BlockState> {
-		let id = self.block_registry.register(state);
+	pub fn set_block_state<T: Borrow<BlockState>>(&mut self, x: i64, y: i64, z: i64, state: T) -> Option<&BlockState> {
+		let id = self.block_registry.register(state.borrow());
 		let old_id = self.set_block_id(x, y, z, id)?;
 		self.block_registry.get(old_id)
 	}
