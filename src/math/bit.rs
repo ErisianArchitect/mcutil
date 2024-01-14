@@ -18,6 +18,8 @@ pub trait BitLength {
 
 impl<T: GetBit + BitSize + Copy> BitLength for T {
 	fn bit_length(self) -> u32 {
+		// This one looks off when you first look at it,
+		// but it should work as intended.
 		(1..=Self::BITSIZE)
 			.rev()
 			.find(|&n| {
