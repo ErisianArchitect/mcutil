@@ -19,15 +19,24 @@ in the registry for as long as the registry exists.
 pub struct BlockRegistry {
 	ids: HashMap<BlockState, u32>,
 	states: Vec<BlockState>,
+	// default_state: BlockState,
 }
 
 impl BlockRegistry {
+	// Does it make sense for a BlockRegistry to not have
+	// `minecraft:air` registered as the 0-index BlockState?
 	pub fn new() -> Self {
 		Self {
 			ids: HashMap::new(),
 			states: Vec::new(),
+			// default_state: BlockState::air(),
 		}
 	}
+
+	// pub fn set_default(mut self, state: BlockState) -> Self {
+	// 	self.default_state = state;
+	// 	self
+	// }
 
 	pub fn len(&self) -> usize {
 		self.states.len()
@@ -39,7 +48,8 @@ impl BlockRegistry {
 		let air = BlockState::air();
 		Self {
 			ids: HashMap::from([(air.clone(), 0)]),
-			states: Vec::from([air])
+			states: Vec::from([air]),
+			// default_state: BlockState::air(),
 		}
 	}
 
@@ -78,6 +88,14 @@ impl BlockRegistry {
 			Some(&self.states[id as usize])
 		} else {
 			None
+		}
+	}
+
+	pub fn get_or<'a>(&'a self, id: u32, or: &'a BlockState) -> &'a BlockState {
+		if (id as usize) < self.states.len() {
+			&self.states[id as usize]
+		} else {
+			or
 		}
 	}
 }
