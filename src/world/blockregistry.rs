@@ -10,6 +10,10 @@ use std::collections::HashMap;
 
 use super::blockstate::*;
 
+// I'm going to shelve this for another time.
+// #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+// pub struct BlockId(u32);
+
 /*
 BlockRegistry handles all blocks that are used in a world.
 Each block will have a unique ID assigned to it when it is added to
