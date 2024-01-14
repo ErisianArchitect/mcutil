@@ -144,7 +144,7 @@ impl Chunk {
 	pub fn new(x: i32, y: i32, z: i32) -> Self {
 		// I'm not entirely sure how I am supposed to structure the
 		// fields of the chunk for an empty chunk. I guess I should
-		// some more work researching the structure of chunks.
+		// do some more work researching the structure of chunks.
 		// Also, for simplicity, this library will target some
 		// specific version of minecraft. Let's say, 1.19.
 		// I don't think it would be advisable to attempt to target
