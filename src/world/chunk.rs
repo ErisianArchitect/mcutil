@@ -140,7 +140,7 @@ impl Chunk {
 	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
 		Tag::Compound(encode_chunk(block_registry, self))
 	}
-	
+
 	pub fn new(x: i32, y: i32, z: i32) -> Self {
 		// I'm not entirely sure how I am supposed to structure the
 		// fields of the chunk for an empty chunk. I guess I should
@@ -236,22 +236,58 @@ pub struct ChunkSections {
 
 #[derive(Clone)]
 pub struct BlockEntity {
-	id: String,
-	keep_packed: i8,
-	x: i32,
-	y: i32,
-	z: i32,
-	data: Map,
+	pub id: String,
+	pub keep_packed: i8,
+	pub x: i32,
+	pub y: i32,
+	pub z: i32,
+	pub data: Map,
+}
+
+pub struct Heightmap {
+	pub map: Vec<i64>
+}
+
+impl Heightmap {
+	pub fn get(&self, coord: (i64, i64)) -> i64 {
+		let index = (coord.1 * 16 + coord.0) as usize;
+		let sub_index = index / 7;
+		let mask_offset = (index % 7) * 9;
+		let mask = 511 << mask_offset;
+		(self.map[sub_index] & mask) >> mask_offset
+	}
+
+	pub fn set(&mut self, coord: (i64, i64), height: u32) {
+		let index = (coord.1 * 16 + coord.0) as usize;
+		let sub_index = index / 7;
+		let mask_offset = (index % 7) * 9;
+		let mask = 511i64 << mask_offset;
+		let value = (height & 511) as i64;
+		let invert_mask = mask.not();
+		self.map[sub_index] = (self.map[sub_index] & invert_mask) | (value << mask_offset)
+	}
+}
+
+impl From<Vec<i64>> for Heightmap {
+	fn from(value: Vec<i64>) -> Self {
+		Self { map: value }
+	}
+}
+
+impl Into<Vec<i64>> for Heightmap {
+	fn into(self) -> Vec<i64> {
+		self.map
+	}
 }
 
 #[derive(Clone)]
 pub struct Heightmaps {
-	motion_blocking: Vec<i64>,
-	motion_blocking_no_leaves: Vec<i64>,
-	ocean_floor: Vec<i64>,
-	ocean_floor_wg: Option<Vec<i64>>,
-	world_surface: Vec<i64>,
-	world_surface_wg: Option<Vec<i64>>,
+	pub motion_blocking: Vec<i64>,
+	pub motion_blocking_no_leaves: Vec<i64>,
+	pub ocean_floor: Vec<i64>,
+	pub ocean_floor_wg: Option<Vec<i64>>,
+	pub world_surface: Vec<i64>,
+	pub world_surface_wg: Option<Vec<i64>>,
 }
 
 impl EncodeNbt for Heightmaps {
@@ -296,8 +332,8 @@ impl DecodeNbt for Heightmaps {
 
 #[derive(Clone)]
 pub struct CarvingMasks {
-	air: Vec<i8>,
-	liquid: Vec<i8>,
+	pub air: Vec<i8>,
+	pub liquid: Vec<i8>,
 }
 
 impl EncodeNbt for CarvingMasks {
