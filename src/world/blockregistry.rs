@@ -19,7 +19,6 @@ in the registry for as long as the registry exists.
 pub struct BlockRegistry {
 	ids: HashMap<BlockState, u32>,
 	states: Vec<BlockState>,
-	// default_state: BlockState,
 }
 
 impl BlockRegistry {
@@ -29,14 +28,8 @@ impl BlockRegistry {
 		Self {
 			ids: HashMap::new(),
 			states: Vec::new(),
-			// default_state: BlockState::air(),
 		}
 	}
-
-	// pub fn set_default(mut self, state: BlockState) -> Self {
-	// 	self.default_state = state;
-	// 	self
-	// }
 
 	pub fn len(&self) -> usize {
 		self.states.len()
@@ -49,7 +42,6 @@ impl BlockRegistry {
 		Self {
 			ids: HashMap::from([(air.clone(), 0)]),
 			states: Vec::from([air]),
-			// default_state: BlockState::air(),
 		}
 	}
 
@@ -98,4 +90,9 @@ impl BlockRegistry {
 			or
 		}
 	}
+
+	// TODO: I need a function to create a subset BlockRegistry.
+	// pub fn subset(&self) -> BlockRegistry {
+	// 	todo!()
+	// }
 }
