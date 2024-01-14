@@ -42,6 +42,8 @@ pub enum McError {
 	NotFoundInCompound(String),
 	#[error("World Directory not found. {0}")]
 	WorldDirectoryNotFound(PathBuf),
+	#[error("Failed to save chunk.")]
+	FailedToSaveChunk,
 }
 
 impl McError {
