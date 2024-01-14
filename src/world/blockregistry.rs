@@ -84,6 +84,14 @@ impl BlockRegistry {
 		}
 	}
 
+	pub fn get_or<'a>(&'a self, id: u32, or: &'a BlockState) -> &'a BlockState {
+		if (id as usize) < self.states.len() {
+			&self.states[id as usize]
+		} else {
+			or
+		}
+	}
+
 	pub fn get_owned(&self, id: u32) -> Option<BlockState> {
 		if (id as usize) < self.states.len() {
 			Some(self.states[id as usize].clone())
@@ -98,14 +106,6 @@ impl BlockRegistry {
 
 	pub fn get_owned_or_else<F: Fn() -> BlockState>(&self, id: u32, f: F) -> BlockState {
 		self.get_owned(id).unwrap_or_else(f)
-	}
-
-	pub fn get_or<'a>(&'a self, id: u32, or: &'a BlockState) -> &'a BlockState {
-		if (id as usize) < self.states.len() {
-			&self.states[id as usize]
-		} else {
-			or
-		}
 	}
 
 	// TODO: I need a function to create a subset BlockRegistry.
