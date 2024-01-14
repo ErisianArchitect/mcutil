@@ -38,12 +38,18 @@ struct VirtualChunk {
 }
 
 pub struct CubeNeighbors<T> {
-	top: T,	// +Y
-	bottom: T,// -Y
-	east: T,	// +X
-	west: T,	// -X
-	south: T,	// +Z
-	north: T,	// -Z
+	/// +Y
+	top: T,
+	/// -Y
+	bottom: T,
+	/// +X
+	east: T,
+	/// -X
+	west: T,
+	/// +Z
+	south: T,
+	/// -Z
+	north: T,
 }
 
 impl<T> CubeNeighbors<T> {
