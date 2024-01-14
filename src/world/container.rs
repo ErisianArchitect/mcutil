@@ -10,9 +10,9 @@ pub trait BlockStorage {
 }
 
 pub struct BlockContainer {
-	size: (u16, u16, u16),
-	blocks: Box<[u32]>,
-	block_registry: BlockRegistry,
+	pub(crate) size: (u16, u16, u16),
+	pub(crate) blocks: Box<[u32]>,
+	pub(crate) block_registry: BlockRegistry,
 }
 
 impl BlockContainer {
