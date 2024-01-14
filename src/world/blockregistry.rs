@@ -92,6 +92,10 @@ impl BlockRegistry {
 		}
 	}
 
+	pub fn get_owned_or(&self, id: u32, default: BlockState) -> BlockState {
+		self.get_owned(id).unwrap_or(default)
+	}
+
 	pub fn get_owned_or_else<F: Fn() -> BlockState>(&self, id: u32, f: F) -> BlockState {
 		self.get_owned(id).unwrap_or_else(f)
 	}
