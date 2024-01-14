@@ -138,6 +138,20 @@ impl BlockProperties {
 			None
 		}
 	}
+
+	pub fn get<S: AsRef<str>>(&self, key: S) -> Option<&str> {
+		// Simple binary search.
+		let key = key.as_ref().to_owned();
+		if let Some(props) = &self.properties {
+			let index = props.as_slice().binary_search_by(|prop| {
+				prop.name.cmp(&key)
+			});
+			if let Ok(index) = index {
+				return Some(&props[index].value);
+			}
+		}
+		None
+	}
 }
 
 impl<T: Into<BlockProperty>, It: IntoIterator<Item = T>> From<It> for BlockProperties {
@@ -176,6 +190,10 @@ impl BlockState {
 
 	pub fn properties(&self) -> Option<&[BlockProperty]> {
 		self.properties.properties()
+	}
+
+	pub fn get_property<S: AsRef<str>>(&self, key: S) -> Option<&str> {
+		self.properties.get(key)
 	}
 
 	pub fn to_map(self) -> Map {
