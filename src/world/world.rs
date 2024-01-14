@@ -72,6 +72,40 @@ impl<T> CubeNeighbors<T> {
 	}
 }
 
+// I was thinking that I could make it so that for get_block/set_block function
+// I could make it so that the world automatically loads/creates chunks that are
+// not yet loaded.
+// pub enum MissingAction {
+// 	None,
+// 	Load,
+// 	LoadOrCreate,
+// }
+
+struct RegionSlot {
+	region: ArcRegion,
+	load_count: usize,
+}
+
+struct ChunkSlot {
+	pub chunk: ArcChunk,
+	/// Determines if the chunk has been altered since last saved.
+	pub dirty: bool,
+}
+
+impl ChunkSlot {
+	pub fn new(chunk: Chunk) -> Self {
+		Self {
+			chunk: make_arcmutex(chunk),
+			dirty: false,
+		}
+	}
+
+	#[inline(always)]
+	pub fn mark_dirty(&mut self) {
+		self.dirty = true;
+	}
+}
+
 /*
 VirtualJavaWorld is for testing purposes. I plan on rewriting the entire
 system after I get a better idea of what I'm working with.
@@ -82,6 +116,10 @@ pub struct VirtualJavaWorld {
 	pub regions: HashMap<WorldCoord, ArcRegion>,
 	pub directory: PathBuf,
 }
+
+// I would like to implement a system where I keep track of
+// how many chunks are loaded per region so that I can unload
+// a region when there are no more chunks.
 
 impl VirtualJavaWorld {
 	pub fn open(directory: impl AsRef<Path>) -> Self {
@@ -215,6 +253,12 @@ impl VirtualJavaWorld {
 		})
 	}
 
+	/// Unloads all loaded chunks and all loaded region files.
+	pub fn unload_all(&mut self) {
+		self.chunks.clear();
+		self.regions.clear();
+	}
+
 	/// Get a block id at the given coordinate.
 	pub fn get_block_id(&self, coord: BlockCoord) -> Option<u32> {
 		if let Some(chunk) = self.chunks.get(&coord.chunk_coord()) {
@@ -283,6 +327,10 @@ impl VirtualJavaWorld {
 			south: get_neighbor!(0, 0, 1),
 			north: get_neighbor!(0, 0, -1),
 		}
+	}
+
+	pub fn is_chunk_loaded(&self, coord: WorldCoord) -> bool {
+		self.chunks.contains_key(&coord)
 	}
 }
 
