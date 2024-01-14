@@ -3,7 +3,7 @@
 */
 #![allow(unused)]
 
-use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem};
+use std::{collections::HashMap, path::{PathBuf, Path}, marker::PhantomData, sync::{Arc, Mutex}, ops::Rem, borrow::Borrow};
 
 use crate::{McResult, McError, nbt::tag::NamedTag, math::bounds::Bounds2};
 use super::container::*;
@@ -172,15 +172,41 @@ impl VirtualJavaWorld {
 					return Ok(())
 				}
 			}
-			McError::custom("Failed to write chunk to file.")
+			Err(McError::FailedToSaveChunk)
 		} else {
 			Ok(())
 		}
 	}
 
+	pub fn save_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) -> McResult<()> {
+		let bounds: Bounds2 = bounds.into();
+		(bounds.min.y..bounds.max.y).try_for_each(|y| {
+			(bounds.min.x..bounds.max.x).try_for_each(|x| {
+				self.save_chunk(WorldCoord::new(x, y, dimension))?;
+				McResult::Ok(())
+			})
+		})
+	}
+
+	pub fn save_all(&mut self) -> McResult<()> {
+		let keys_clone = self.chunks.keys().map(|c| *c).collect::<Box<[WorldCoord]>>();
+		keys_clone.into_iter().try_for_each(|coord| {
+			self.save_chunk(*coord)
+		})
+	}
+
 	/// Remove a chunk from internal storage.
 	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunk> {
 		self.chunks.remove(&coord)
+	}
+
+	pub fn unload_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) {
+		let bounds: Bounds2 = bounds.into();
+		(bounds.min.y..bounds.max.y).for_each(|y| {
+			(bounds.min.x..bounds.max.x).for_each(|x| {
+				self.unload_chunk(WorldCoord::new(x, y, dimension));
+			})
+		})
 	}
 
 	/// Get a block id at the given coordinate.
@@ -214,8 +240,8 @@ impl VirtualJavaWorld {
 	}
 
 	/// Set the block state at a coordinate. This will return the old block state.
-	pub fn set_block_state(&mut self, coord: BlockCoord, state: &BlockState) -> Option<&BlockState> {
-		let id = self.block_registry.register(state);
+	pub fn set_block_state<T: Borrow<BlockState>>(&mut self, coord: BlockCoord, state: T) -> Option<&BlockState> {
+		let id = self.block_registry.register(state.borrow());
 		self.set_block_id(coord, id).and_then(|id| {
 			self.block_registry.get(id)
 		})
