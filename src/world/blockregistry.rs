@@ -16,6 +16,7 @@ Each block will have a unique ID assigned to it when it is added to
 the registry. Blocks are never removed from the registry. They remain
 in the registry for as long as the registry exists.
 */
+#[derive(Clone, Default)]
 pub struct BlockRegistry {
 	ids: HashMap<BlockState, u32>,
 	states: Vec<BlockState>,
