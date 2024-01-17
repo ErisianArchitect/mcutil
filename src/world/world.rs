@@ -95,6 +95,7 @@ impl RegionSlot {
 		self.load_count += 1;
 	}
 
+	/// Returns `true` when count gets to 0.
 	pub fn decrement(&mut self) -> bool {
 		self.load_count = self.load_count.checked_sub(1).unwrap_or_default();
 		self.load_count == 0
