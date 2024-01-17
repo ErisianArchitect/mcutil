@@ -37,6 +37,7 @@ pub trait ShiftIndex: Copy {
 macro_rules! __shiftindex_impls {
 	($type:ty) => {
 		impl ShiftIndex for $type {
+			#[inline(always)]
 			fn shift_index(self) -> u32 {
 				self as u32
 			}
