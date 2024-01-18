@@ -241,6 +241,11 @@ impl WorldCoord {
 			dimension: self.dimension,
 		}
 	}
+
+	#[inline(always)]
+	pub fn neighbor(self, direction: Cardinal) -> Self {
+		self + direction
+	}
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
