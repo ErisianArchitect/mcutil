@@ -321,7 +321,8 @@ impl BlockCoord {
 
 	#[inline(always)]
 	pub fn neighbor(self, direction: CubeDirection) -> Self {
-		self + direction
+		let (x,y,z) = direction.coord();
+		Self::new(self.x + x, self.y + y, self.z + z, self.dimension)
 	}
 }
 
