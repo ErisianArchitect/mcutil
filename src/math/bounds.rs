@@ -80,6 +80,7 @@ pub struct Bounds3 {
 }
 
 impl Bounds3 {
+	/// Creates a [Bounds3] which encompasses the area from `a` to `b` (inclusive).
 	pub fn new<T: Into<I64Vec3>>(a: T, b: T) -> Self {
 		let a: I64Vec3 = a.into();
 		let b: I64Vec3 = b.into();
