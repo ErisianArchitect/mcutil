@@ -1,6 +1,6 @@
 
 use std::io::{Read, Write};
-use chrono::{NaiveDateTime, DateTime, Utc};
+use chrono::{NaiveDateTime, DateTime, Utc, TimeZone};
 use crate::{
 	McResult,
 	for_each_int_type,
@@ -72,7 +72,7 @@ impl TryFrom<Timestamp> for DateTime<Utc> {
 	fn try_from(value: Timestamp) -> Result<Self, Self::Error> {
 		let naive = NaiveDateTime::from_timestamp_opt(value.0 as i64, 0);
 		if let Some(naive) = naive {
-			Ok(DateTime::<Utc>::from_utc(naive, Utc))
+			Ok(Utc.from_utc_datetime(&naive))
 		} else {
 			Err(())
 		}
