@@ -430,3 +430,14 @@ World:
 		register_block
 		find_block
 */
+
+/*
+One of the issues with my current implementation of the virtual world is that you have to manually load
+the chunks that you want to edit. Ideally, it should be possible to edit a world without ever having to
+worry about calling functions to manually load chunks. This is actually pretty easy to achieve. All I
+have to do is set a limit to the number of chunks that can be loaded at the same time. Then every time
+the user wants to get/set a block, the chunk is automatically loaded if it hasn't been loaded already.
+The chunk is then stored in a queue. The once the queue reaches a certain size, the oldest element is
+pulled out of the queue and it is saved and unloaded. Any time a chunk that is already in the queue is
+edited, it goes to the back of the queue.
+*/
