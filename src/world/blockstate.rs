@@ -196,7 +196,7 @@ impl BlockState {
 		self.properties.get(key)
 	}
 
-	pub fn to_map(self) -> Map {
+	pub fn to_nbt(self) -> Map {
 		let mut props = Map::new();
 		if let Some(properties) = self.properties.properties {
 			props.extend(properties.iter().map(|prop| {
@@ -241,7 +241,7 @@ impl<S: AsRef<str>> From<S> for BlockState {
 
 impl EncodeNbt for BlockState {
 	fn encode_nbt(self) -> Tag {
-		let map = self.to_map();
+		let map = self.to_nbt();
 		Tag::Compound(map)
 	}
 }

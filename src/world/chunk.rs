@@ -577,7 +577,7 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 		});
 		// Build palette
 		let palette = palette.into_iter().map(|state| {
-			state.to_map()
+			state.to_nbt()
 		}).collect::<Vec<Map>>();
 		let palette = Tag::List(ListTag::Compound(palette));
 		let data = Tag::LongArray(data);
