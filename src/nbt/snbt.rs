@@ -257,10 +257,11 @@ fn snbt_parser() -> impl Parser<SnbtToken, Tag, Error = Simple<SnbtToken>> {
 		let double = Token::Decimal(DecimalType::Double) => f64;
 	};
 	let byte = byte.or(
-		choice((
-			filter(|token| matches!(token, SnbtToken::Boolean(true))).to(1i8),
-			filter(|token| matches!(token, SnbtToken::Boolean(false))).to(0i8),
-		))
+		filter(|token| matches!(token, SnbtToken::Boolean(_)))
+			.map(|token| match token {
+				SnbtToken::Boolean(true) => 1i8,
+				_ => 0i8
+			})
 	);
 	macro_rules! array_parsers {
 		($(let $name:ident = [$type:ident; $item:expr];)+) => {
@@ -277,13 +278,6 @@ fn snbt_parser() -> impl Parser<SnbtToken, Tag, Error = Simple<SnbtToken>> {
 		let intarray = [Int; int.clone()];
 		let longarray = [Long; long.clone()];
 	}
-	let byte = byte.or(
-		filter::<SnbtToken,_,Simple<SnbtToken>>(|token| matches!(token, SnbtToken::Boolean(_)))
-			.map(|token| match token {
-				SnbtToken::Boolean(true) => 1i8,
-				_ => 0i8,
-			})
-	);
 	// converts Token::StringLiteral and Token::Identifier into String.
 	// This is because these tokens may mean different things in different contexts.
 	let string = filter::<SnbtToken,_,Simple<SnbtToken>>(|token| matches!(token, SnbtToken::StringLiteral(_) | SnbtToken::Identifier(_)))
