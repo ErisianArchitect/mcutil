@@ -520,7 +520,7 @@ mod tests {
 			byte3 : 127b,
 			short : 69s,
 			int : 420,
-			long : 69420,
+			long : 69420l,
 			float : 3f,
 			float2 : 3.14f,
 			double : 4d,
