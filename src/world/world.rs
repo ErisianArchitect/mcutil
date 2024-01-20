@@ -305,18 +305,18 @@ impl VirtualJavaWorld {
 	}
 
 	/// Get a block id at the given coordinate.
-	pub fn get_block_id(&self, coord: BlockCoord) -> Option<u32> {
+	pub fn get_id(&self, coord: BlockCoord) -> Option<u32> {
 		if let Some(slot) = self.get_chunk(coord.chunk_coord()) {
 			if let Ok(slot) = slot.lock() {
-				return slot.chunk.get_block_id(coord.xyz());
+				return slot.chunk.get_id(coord.xyz());
 			}
 		}
 		None
 	}
 
 	/// Get a block state at the given coordinate.
-	pub fn get_block_state(&self, coord: BlockCoord) -> Option<&BlockState> {
-		if let Some(id) = self.get_block_id(coord) {
+	pub fn get_state(&self, coord: BlockCoord) -> Option<&BlockState> {
+		if let Some(id) = self.get_id(coord) {
 			self.block_registry.get(id)
 		} else {
 			None
@@ -325,10 +325,10 @@ impl VirtualJavaWorld {
 
 	/// Set a block id, returning the old block id.
 	/// (This function does not check that the ids are the same)
-	pub fn set_block_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
+	pub fn set_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
 		if let Some(slot) = self.get_chunk(coord.chunk_coord()) {
 			if let Ok(mut slot) = slot.lock() {
-				let old_id = slot.chunk.set_block_id(coord.xyz(), id);
+				let old_id = slot.chunk.set_id(coord.xyz(), id);
 				if let Some(old_id) = old_id {
 					if old_id != id {
 						slot.mark_dirty();
@@ -343,9 +343,9 @@ impl VirtualJavaWorld {
 	}
 
 	/// Set the block state at a coordinate. This will return the old block state.
-	pub fn set_block_state<T: Borrow<BlockState>>(&mut self, coord: BlockCoord, state: T) -> Option<&BlockState> {
+	pub fn set_state<T: Borrow<BlockState>>(&mut self, coord: BlockCoord, state: T) -> Option<&BlockState> {
 		let id = self.block_registry.register(state.borrow());
-		self.set_block_id(coord, id).and_then(|id| {
+		self.set_id(coord, id).and_then(|id| {
 			self.block_registry.get(id)
 		})
 	}
@@ -353,7 +353,7 @@ impl VirtualJavaWorld {
 	pub fn query_neighbor_ids(&self, coord: BlockCoord) -> CubeNeighbors<u32> {
 		macro_rules! get_neighbor {
 			($x:expr, $y:expr, $z:expr) => {
-				self.get_block_id(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension)).unwrap_or_default()
+				self.get_id(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension)).unwrap_or_default()
 			};
 		}
 		CubeNeighbors {
@@ -369,7 +369,7 @@ impl VirtualJavaWorld {
 	pub fn query_neighbor_states(&self, coord: BlockCoord) -> CubeNeighbors<Option<&BlockState>> {
 		macro_rules! get_neighbor {
 			($x:expr, $y:expr, $z:expr) => {
-				self.get_block_state(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension))
+				self.get_state(BlockCoord::new(coord.x + ($x), coord.y + ($y), coord.z + ($z), coord.dimension))
 			};
 		}
 		CubeNeighbors {
@@ -398,7 +398,7 @@ impl VirtualJavaWorld {
 	pub fn fill_area_id(&mut self, dimension: Dimension, bounds: Bounds3, id: u32) {
 		bounds.for_each(|coord| {
 			let (x,y,z): (i64, i64, i64) = coord.into();
-			self.set_block_id(dimension.blockcoord(x, y, z), id);
+			self.set_id(dimension.blockcoord(x, y, z), id);
 		});
 	}
 

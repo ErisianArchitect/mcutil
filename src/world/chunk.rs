@@ -123,18 +123,18 @@ pub struct Chunk {
 }
 
 impl Chunk {
-	pub fn get_block_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
+	pub fn get_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
 		let section_index = chunk_section_index(coord.1, lowy as i64);
 		let (x, y, z) = chunk_local_coord(coord);
-		self.sections.sections[section_index].get_block_id(x, y, z)
+		self.sections.sections[section_index].get_id(x, y, z)
 	}
 
-	pub fn set_block_id(&mut self, coord: (i64, i64, i64), id: u32) -> Option<u32> {
+	pub fn set_id(&mut self, coord: (i64, i64, i64), id: u32) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
 		let section_index = chunk_section_index(coord.1, lowy as i64);
 		let (x, y, z) = chunk_local_coord(coord);
-		self.sections.sections[section_index].set_block_id(x, y, z, id)
+		self.sections.sections[section_index].set_id(x, y, z, id)
 	}
 
 	pub fn to_nbt(&self, block_registry: &BlockRegistry) -> Tag {
@@ -205,7 +205,7 @@ pub struct ChunkSection {
 }
 
 impl ChunkSection {
-	pub fn get_block_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
+	pub fn get_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
 		if let Some(blocks) = &self.blocks {
 			let index = chunk_yzx_index(local_x, local_y, local_z);
 			Some(blocks[index])
@@ -214,7 +214,7 @@ impl ChunkSection {
 		}
 	}
 
-	pub fn set_block_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) -> Option<u32> {
+	pub fn set_id(&mut self, local_x: i64, local_y: i64, local_z: i64, id: u32) -> Option<u32> {
 		if self.blocks.is_none() && id != 0 {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
