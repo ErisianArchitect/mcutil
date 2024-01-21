@@ -155,9 +155,7 @@ impl std::fmt::Display for HeightmapFlags {
 			}
 			write!(f, "{}", HeightmapFlag::WorldSurface)?;
 		}
-		write!(f, ")")?;
-
-		Ok(())
+		write!(f, ")")
 	}
 }
 
