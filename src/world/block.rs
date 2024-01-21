@@ -1,6 +1,9 @@
+use std::ops::Not;
+
 use crate::math::coord::*;
 use glam::i64::I64Vec3;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CubeDirection {
 	East,	// +X
 	West,	// -X
@@ -8,6 +11,126 @@ pub enum CubeDirection {
 	North,	// -Z
 	Up,		// +Y
 	Down,	// -Y
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CubeFace {
+	East = 1,
+	West = 2,
+	South = 4,
+	North = 8,
+	Top = 16,
+	Bottom = 32,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CubeFaces(u8);
+
+impl CubeFaces {
+	#[inline(always)]
+	pub fn check(self, face: CubeFace) -> bool {
+		let rhs = face as u8;
+		(self.0 & rhs) == rhs
+	}
+
+	#[inline(always)]
+	pub fn apply<T: Into<CubeFaces>>(&mut self, faces: T) {
+		let faces: CubeFaces = faces.into();
+		self.0 = self.0 | faces.0;
+	}
+
+	#[inline(always)]
+	pub fn remove<T: Into<CubeFaces>>(&mut self, faces: T) {
+		let faces: CubeFaces = faces.into();
+		self.0 = self.0 & faces.0.not();
+	}
+}
+
+#[test]
+fn qtest() {
+	let mut faces = CubeFaces::default();
+	faces.apply(CubeFace::Top | CubeFace::West);
+	faces.apply(CubeFace::North);
+	faces.remove(CubeFace::Top);
+	macro_rules! check {
+		($($face:ident),+) => {
+			$(
+				println!("{:>6}: {}", stringify!($face), faces.check(CubeFace::$face));
+			)+
+		};
+		() => {
+			check!(East, West, South, North, Top, Bottom);
+		};
+	}
+	check!();
+}
+
+impl From<CubeFace> for CubeFaces {
+	#[inline(always)]
+	fn from(value: CubeFace) -> Self {
+		CubeFaces(value as u8)
+	}
+}
+
+impl std::ops::BitOr<CubeFace> for CubeFace {
+	type Output = CubeFaces;
+
+	#[inline(always)]
+	fn bitor(self, rhs: CubeFace) -> Self::Output {
+		let lhs = self as u8;
+		let rhs = rhs as u8;
+		CubeFaces(lhs | rhs)
+	}
+}
+
+impl std::ops::BitOr<CubeFace> for CubeFaces {
+	type Output = CubeFaces;
+
+	#[inline(always)]
+	fn bitor(self, rhs: CubeFace) -> Self::Output {
+		let lhs = self.0;
+		let rhs = rhs as u8;
+		CubeFaces(lhs | rhs)
+	}
+}
+
+impl std::ops::BitOr<CubeFaces> for CubeFaces {
+	type Output = CubeFaces;
+
+	#[inline(always)]
+	fn bitor(self, rhs: CubeFaces) -> Self::Output {
+		let lhs = self.0;
+		let rhs = rhs.0;
+		CubeFaces(lhs | rhs)
+	}
+}
+
+impl From<CubeDirection> for CubeFace {
+	#[inline(always)]
+	fn from(value: CubeDirection) -> Self {
+		match value {
+			CubeDirection::East => CubeFace::East,
+			CubeDirection::West => CubeFace::West,
+			CubeDirection::South => CubeFace::South,
+			CubeDirection::North => CubeFace::North,
+			CubeDirection::Up => CubeFace::Top,
+			CubeDirection::Down => CubeFace::Bottom,
+		}
+	}
+}
+
+impl From<CubeFace> for CubeDirection {
+	#[inline(always)]
+	fn from(value: CubeFace) -> Self {
+		match value {
+			CubeFace::East => CubeDirection::East,
+			CubeFace::West => CubeDirection::West,
+			CubeFace::South => CubeDirection::South,
+			CubeFace::North => CubeDirection::North,
+			CubeFace::Top => CubeDirection::Up,
+			CubeFace::Bottom => CubeDirection::Down,
+		}
+	}
 }
 
 impl CubeDirection {
@@ -74,10 +197,17 @@ pub enum HeightmapFlag {
 pub struct HeightmapFlags(u8);
 
 impl HeightmapFlags {
-	pub fn check(self, flag: HeightmapFlag) -> bool {
-		let rhs = flag as u8;
-		let lhs = self.0;
-		(lhs & rhs) == rhs
+	#[inline(always)]
+	pub fn check<T: Into<HeightmapFlags>>(self, flags: T) -> bool {
+		let flags: HeightmapFlags = flags.into();
+		(self.0 & flags.0) == flags.0
+	}
+}
+
+impl From<HeightmapFlag> for HeightmapFlags {
+	#[inline(always)]
+	fn from(value: HeightmapFlag) -> Self {
+		HeightmapFlags(value as u8)
 	}
 }
 
