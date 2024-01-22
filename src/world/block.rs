@@ -289,8 +289,27 @@ impl std::fmt::Display for HeightmapFlags {
 	}
 }
 
+// What info do I need for a Block?
+// I guess that depends on what the implementation needs
+// to be able to do.
+// resource_id is the id for the block. Example: "minecraft:bedrock"
+// heightmap_flags stores information about which heightmaps
+// are affected by this block.
+// I was thinking of also storing mesh data, but I might save
+// that for the application implementation.
+#[allow(unused)]
 pub struct BlockInfo {
+	resource_id: String,
 	heightmap_flags: HeightmapFlags,
 	mesh_data: (),
-	
+}
+
+impl BlockInfo {
+	pub fn new<S: AsRef<str>>(resource_id: S, heightmap_flags: HeightmapFlags) -> Self {
+		Self {
+			resource_id: resource_id.as_ref().to_owned(),
+			heightmap_flags,
+			mesh_data: (),
+		}
+	}
 }
