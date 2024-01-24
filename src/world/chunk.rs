@@ -3,6 +3,7 @@ use std::collections::HashMap;
 // use std::default;
 use std::ops::Not;
 
+use super::block::HeightmapFlag;
 use super::blockstate::*;
 
 use crate::McError;
@@ -141,6 +142,7 @@ impl Chunk {
 		Tag::Compound(encode_chunk(block_registry, self))
 	}
 
+	#[allow(unused)]
 	pub fn new(x: i32, y: i32, z: i32) -> Self {
 		// I'm not entirely sure how I am supposed to structure the
 		// fields of the chunk for an empty chunk. I guess I should
@@ -150,6 +152,15 @@ impl Chunk {
 		// I don't think it would be advisable to attempt to target
 		// a wide range of data versions.
 		todo!()
+	}
+
+	pub fn get_heightmap(&self, heightmap: HeightmapFlag, x: i64, z: i64) -> i64 {
+		match heightmap {
+			HeightmapFlag::MotionBlocking => self.heightmaps.motion_blocking.get((x, z)),
+			HeightmapFlag::MotionBlockingNoLeaves => self.heightmaps.motion_blocking_no_leaves.get((x, z)),
+			HeightmapFlag::OceanFloor => self.heightmaps.ocean_floor.get((x, z)),
+			HeightmapFlag::WorldSurface => self.heightmaps.world_surface.get((x, z)),
+		}
 	}
 }
 
