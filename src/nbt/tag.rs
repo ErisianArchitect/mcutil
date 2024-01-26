@@ -45,9 +45,8 @@ pub trait EncodeNbt {
 /// This trait is intended for types that don't have a direct
 /// NBT representation, but can be decoded from NBT data.
 pub trait DecodeNbt: Sized {
-	type Error;
 	/// Tries to decode from NBT.
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error>;
+	fn decode_nbt(nbt: Tag) -> McResult<Self>;
 }
 /// The NBT Tag enum.<br>
 /// To see what types are supported, take a look at the table in [tag_info_table] located in [`/src/table.rs`].
@@ -272,9 +271,8 @@ macro_rules! tag_code {
 			// so that you can avoid that clone, otherwise you can clone the tag yourself
 			// before decoding it.
 			impl DecodeNbt for $type {
-				type Error = McError;
 				#[doc = "Attempts to decode the tag."]
-				fn decode_nbt(tag: Tag) -> Result<Self, Self::Error> {
+				fn decode_nbt(tag: Tag) -> McResult<Self> {
 					if let Tag::$title(tag) = tag {
 						return Ok(tag)
 					}
@@ -552,7 +550,7 @@ impl Tag {
 	}
 
 	/// If the tag is a Compound, get a value within the compound by name.
-	pub fn get_value<S: AsRef<str>, R: DecodeNbt<Error = McError>>(&self, name: S) -> McResult<Option<R>> {
+	pub fn get_value<S: AsRef<str>, R: DecodeNbt>(&self, name: S) -> McResult<Option<R>> {
 		if let Tag::Compound(map) = self {
 			if let Some(value) = map.get(name.as_ref()) {
 				Ok(Some(R::decode_nbt(value.clone())?))

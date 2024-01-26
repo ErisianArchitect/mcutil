@@ -271,9 +271,7 @@ impl Level {
 }
 
 impl DecodeNbt for Level {
-	type Error = McError;
-
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
 		if let Tag::Compound(mut map) = nbt {
 			let mut data: Map = map_decoder!(map; "Data" -> Map);
 			Ok(Level {

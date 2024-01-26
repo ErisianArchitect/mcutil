@@ -183,8 +183,7 @@ impl EncodeNbt for Vec<BlockEntity> {
 }
 
 impl DecodeNbt for Vec<BlockEntity> {
-	type Error = McError;
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
 		if let Tag::List(list) = nbt {
 			if let ListTag::Compound(entities) = list {
 				entities.into_iter().map(|mut entity| {
@@ -281,9 +280,7 @@ impl Heightmap {
 }
 
 impl DecodeNbt for Heightmap {
-	type Error = McError;
-
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
 		if let Tag::LongArray(data) = nbt {
 			Ok(Heightmap::from(data))
 		} else {
@@ -342,9 +339,7 @@ impl EncodeNbt for Heightmaps {
 }
 
 impl DecodeNbt for Heightmaps {
-	type Error = McError;
-
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
 		if let Tag::Compound(mut map) = nbt {
 			Ok(Heightmaps {
 				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Heightmap),
@@ -378,9 +373,7 @@ impl EncodeNbt for CarvingMasks {
 }
 
 impl DecodeNbt for CarvingMasks {
-	type Error = McError;
-
-	fn decode_nbt(nbt: Tag) -> Result<Self, Self::Error> {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
 		if let Tag::Compound(mut map) = nbt {
 			let air = map_decoder!(map; "AIR" -> Vec<i8>);
 			let liquid = map_decoder!(map; "LIQUID" -> Vec<i8>);
