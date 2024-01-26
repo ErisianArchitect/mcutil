@@ -9,8 +9,9 @@ This is a library that acts as a bridge between Rust and Minecraft data. So this
 # Current Capabilities:
 
 * NBT: Load, Edit, Save
-* Region Files: Load, Save, Optimize (not finished).
+* Region Files: Load, Save, Optimize (not finished)
 * SNBT (JSON-like text-based NBT format) read/write
+* VirtualWorld: Edit blocks and other stuff. Save it back to disk.
 
 # Plans:
 
