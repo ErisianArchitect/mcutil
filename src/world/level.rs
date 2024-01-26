@@ -181,7 +181,7 @@ pub struct Level {
 	/// thundering
 	thundering: i8,
 	/// version
-	version2: i32,
+	version2: i32, // What absolute moron decided to have two variables named "version"?
 }
 
 /// This macro is used to remove an entry from a Map (usually HashMap or IndexMap)
