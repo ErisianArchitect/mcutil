@@ -5,7 +5,7 @@ use crate::nbt::{
 	Map,
 	tag_info_table,
 };
-use crate::McError;
+use crate::{McError, McResult};
 
 use num_traits::ToPrimitive;
 use num_traits::Zero;
@@ -549,6 +549,19 @@ impl Tag {
 			result.insert(name.into(), tag.into());
 		});
 		Tag::Compound(result)
+	}
+
+	/// If the tag is a Compound, get a value within the compound by name.
+	pub fn get_value<S: AsRef<str>, R: DecodeNbt<Error = McError>>(&self, name: S) -> McResult<Option<R>> {
+		if let Tag::Compound(map) = self {
+			if let Some(value) = map.get(name.as_ref()) {
+				Ok(Some(R::decode_nbt(value.clone())?))
+			} else {
+				Ok(None)
+			}
+		} else {
+			Ok(None)
+		}
 	}
 }
 
