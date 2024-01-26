@@ -64,7 +64,7 @@ pub fn write_level_to_file<P: AsRef<Path>>(path: P, level: &Level, compression: 
 	if compression == Compression::none() {
 		write_named_tag(&mut writer, &level_tag, "")
 	} else {
-		let mut encoder = GzEncoder::new(writer, Compression::best());
+		let mut encoder = GzEncoder::new(writer, compression);
 		write_named_tag(&mut encoder, &level_tag, "")
 	}
 }
