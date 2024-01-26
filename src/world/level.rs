@@ -219,6 +219,55 @@ macro_rules! map_encoder {
 	};
 }
 
+impl Level {
+	pub fn encode_nbt(&self) -> Tag {
+		let mut data = Map::new();
+		map_encoder!(data;
+			"BorderCenterX" = self.border_center_x;
+			"BorderCenterZ" = self.border_center_z;
+			"BorderDamagePerBlock" = self.border_damage_per_block;
+			"BorderSize" = self.border_size;
+			"BorderSizeLerpTarget" = self.border_size_lerp_target;
+			"BorderSizeLerpTime" = self.border_size_lerp_time;
+			"BorderWarningBlocks" = self.border_warning_blocks;
+			"BorderWarningTime" = self.border_warning_time;
+			"CustomBossEvents" = self.custom_boss_events.clone();
+			"DataPacks" = self.data_packs.clone();
+			"DataVersion" = self.data_version;
+			"DayTime" = self.day_time;
+			"Difficulty" = self.difficulty;
+			"DifficultyLocked" = self.difficulty_locked;
+			"DragonFight" = self.dragon_fight.clone();
+			"GameRules" = self.game_rules.clone();
+			"LastPlayed" = self.last_played;
+			"LevelName" = self.level_name.clone();
+			"Player" = self.player.clone();
+			"ScheduledEvents" = self.scheduled_events.clone();
+			"ServerBrands" = self.server_brands.clone();
+			"SpawnAngle" = self.spawn_angle;
+			"SpawnX" = self.spawn_x;
+			"SpawnY" = self.spawn_y;
+			"SpawnZ" = self.spawn_z;
+			"Time" = self.time;
+			"Version" = self.version.clone();
+			"WanderingTraderSpawnChance" = self.wandering_trader_spawn_chance;
+			"WanderingTraderSpawnDelay" = self.wandering_trader_spawn_delay;
+			"WasModded" = self.was_modded;
+			"WorldGenSettings" = self.world_gen_settings.clone();
+			"allowCommands" = self.allow_commands;
+			"clearWeatherTime" = self.clear_weather_time;
+			"hardcore" = self.hardcore;
+			"initialized" = self.initialized;
+			"rainTime" = self.rain_time;
+			"raining" = self.raining;
+			"thunderTime" = self.thunder_time;
+			"thundering" = self.thundering;
+			"version" = self.version2;
+		);
+		Tag::Compound(Map::from([("Data".to_owned(), Tag::Compound(data))]))
+	}
+}
+
 impl DecodeNbt for Level {
 	type Error = McError;
 
@@ -271,67 +320,5 @@ impl DecodeNbt for Level {
 		} else {
 			return Err(McError::NbtDecodeError);
 		}
-	}
-}
-
-impl EncodeNbt for Level {
-	fn encode_nbt(self) -> Tag {
-		let mut data = Map::new();
-		let Level {
-			border_center_x,
-			border_center_z,
-			border_damage_per_block,
-			border_size,
-			border_size_lerp_target,
-			border_size_lerp_time,
-			border_warning_blocks,
-			border_warning_time,
-			custom_boss_events,
-			data_packs,
-			data_version,
-			day_time,
-			difficulty,
-			difficulty_locked,
-			dragon_fight,
-			game_rules,
-			game_type,
-			last_played,
-			level_name,
-			player,
-			scheduled_events,
-			server_brands,
-			spawn_angle,
-			spawn_x,
-			spawn_y,
-			spawn_z,
-			time,
-			version,
-			wandering_trader_spawn_chance,
-			wandering_trader_spawn_delay,
-			was_modded,
-			world_gen_settings,
-			allow_commands,
-			clear_weather_time,
-			hardcore,
-			initialized,
-			rain_time,
-			raining,
-			thunder_time,
-			thundering,
-			version2,
-		} = self;
-		map_encoder!(data;
-			"BorderCenterX" = border_center_x;
-			"BorderCenterZ" = border_center_z;
-			"BorderDamagePerBlock" = border_damage_per_block;
-			"BorderSize" = border_size;
-			"BorderSizeLerpTarget" = border_size_lerp_target;
-			"BorderSizeLerpTime" = border_size_lerp_time;
-			"BorderWarningBlocks" = border_warning_blocks;
-			"BorderWarningTime" = border_warning_time;
-			"CustomBossEvents" = custom_boss_events;
-			"DataPacks" = data_packs;
-		);
-		todo!();
 	}
 }
