@@ -239,6 +239,7 @@ impl Level {
 			"DifficultyLocked" = self.difficulty_locked;
 			"DragonFight" = self.dragon_fight.clone();
 			"GameRules" = self.game_rules.clone();
+			"GameType" = self.game_type;
 			"LastPlayed" = self.last_played;
 			"LevelName" = self.level_name.clone();
 			"Player" = self.player.clone();
