@@ -29,7 +29,7 @@ use crate::{
 use flate2::{read::GzDecoder, Compression};
 use flate2::write::GzEncoder;
 
-pub fn read_level<P: AsRef<Path>>(path: P) -> McResult<Tag> {
+pub fn read_level_from_file<P: AsRef<Path>>(path: P) -> McResult<Level> {
 	let mut file = File::open(path)?;
 	let mut buffer: [u8; 1] = [0];
 	file.read_exact(&mut buffer)?;
@@ -38,19 +38,20 @@ pub fn read_level<P: AsRef<Path>>(path: P) -> McResult<Tag> {
 		let reader = BufReader::new(file);
 		let mut decoder = GzDecoder::new(reader);
 		let root: NamedTag = decoder.read_value()?;
-		Ok(root.take_tag())
+		Level::decode_nbt(root.take_tag())
 	} else {
 		todo!()
 	}
 }
 
-pub fn write_level<P: AsRef<Path>>(path: P, level_tag: &Tag) -> McResult<usize> {
+pub fn write_level_to_file<P: AsRef<Path>>(path: P, level: &Level) -> McResult<usize> {
 	let file = File::create(path)?;
 	let writer = BufWriter::new(file);
 	let mut encoder = GzEncoder::new(writer, Compression::best());
+	let level_tag = level.encode_nbt();
 	// let root = NamedTag::new(level_tag);
 	// encoder.write_value(&root)
-	write_named_tag(&mut encoder, level_tag, "")
+	write_named_tag(&mut encoder, &level_tag, "")
 }
 
 /*
