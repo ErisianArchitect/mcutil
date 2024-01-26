@@ -26,32 +26,47 @@ use std::{fs::File, io::{BufReader, BufWriter, Read, Seek, SeekFrom}, path::Path
 use crate::{
 	ioext::ReadExt, nbt::{io::write_named_tag, tag::*, Map}, McError, McResult
 };
-use flate2::{read::GzDecoder, Compression};
+use flate2::{read::GzDecoder, read::ZlibDecoder, Compression};
 use flate2::write::GzEncoder;
 
 pub fn read_level_from_file<P: AsRef<Path>>(path: P) -> McResult<Level> {
 	let mut file = File::open(path)?;
 	let mut buffer: [u8; 1] = [0];
 	file.read_exact(&mut buffer)?;
-	if buffer[0] == 31 {
-		file.seek(SeekFrom::Start(0))?;
-		let reader = BufReader::new(file);
-		let mut decoder = GzDecoder::new(reader);
-		let root: NamedTag = decoder.read_value()?;
-		Level::decode_nbt(root.take_tag())
-	} else {
-		todo!()
+	file.seek(SeekFrom::Start(0))?;
+	let mut reader = BufReader::new(file);
+	// Gzip magic number.
+	match buffer[0] {
+		// GZip
+		0x1f => {
+			let mut decoder = GzDecoder::new(reader);
+			let root: NamedTag = decoder.read_value()?;
+			Level::decode_nbt(root.take_tag())
+		}
+		// ZLib
+		0x78 => {
+			let mut decoder = ZlibDecoder::new(reader);
+			let root: NamedTag = decoder.read_value()?;
+			Level::decode_nbt(root.take_tag())
+		}
+		// No Compression (hopefully)
+		_ => {
+			let root: NamedTag = reader.read_value()?;
+			Level::decode_nbt(root.take_tag())
+		}
 	}
 }
 
-pub fn write_level_to_file<P: AsRef<Path>>(path: P, level: &Level) -> McResult<usize> {
+pub fn write_level_to_file<P: AsRef<Path>>(path: P, level: &Level, compression: Compression) -> McResult<usize> {
 	let file = File::create(path)?;
-	let writer = BufWriter::new(file);
-	let mut encoder = GzEncoder::new(writer, Compression::best());
+	let mut writer = BufWriter::new(file);
 	let level_tag = level.encode_nbt();
-	// let root = NamedTag::new(level_tag);
-	// encoder.write_value(&root)
-	write_named_tag(&mut encoder, &level_tag, "")
+	if compression == Compression::none() {
+		write_named_tag(&mut writer, &level_tag, "")
+	} else {
+		let mut encoder = GzEncoder::new(writer, Compression::best());
+		write_named_tag(&mut encoder, &level_tag, "")
+	}
 }
 
 /*
