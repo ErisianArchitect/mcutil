@@ -343,6 +343,18 @@ macro_rules! tag_code {
 // It's all a very complicated process that's meant to cut down on boilerplate.
 tag_info_table!(tag_code);
 
+impl DecodeNbt for Tag {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
+		Ok(nbt)
+	}
+}
+
+impl EncodeNbt for Tag {
+	fn encode_nbt(self) -> Tag {
+		self
+	}
+}
+
 /// Represents a Named NBT Tag, often used as a Tag Root for an NBT file.
 /// This is also sometimes called a root tag.
 #[derive(Clone, Debug)]
