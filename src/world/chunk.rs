@@ -124,6 +124,35 @@ pub struct Chunk {
 }
 
 impl Chunk {
+
+	pub fn blocklight(&self, coord: (i64, i64, i64)) -> u8 {
+		let lowy = self.sections.sections[0].y;
+		let section_index = chunk_section_index(coord.1, lowy as i64);
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[section_index].blocklight(x, y, z)
+	}
+
+	pub fn skylight(&self, coord: (i64, i64, i64)) -> u8 {
+		let lowy = self.sections.sections[0].y;
+		let section_index = chunk_section_index(coord.1, lowy as i64);
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[section_index].skylight(x, y, z)
+	}
+
+	pub fn set_blocklight(&mut self, coord: (i64, i64, i64), level: u8) -> u8 {
+		let lowy = self.sections.sections[0].y;
+		let section_index = chunk_section_index(coord.1, lowy as i64);
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[section_index].set_blocklight(x, y, z, level)
+	}
+
+	pub fn set_skylight(&mut self, coord: (i64, i64, i64), level: u8) -> u8 {
+		let lowy = self.sections.sections[0].y;
+		let section_index = chunk_section_index(coord.1, lowy as i64);
+		let (x, y, z) = chunk_local_coord(coord);
+		self.sections.sections[section_index].set_skylight(x, y, z, level)
+	}
+
 	pub fn get_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
 		let lowy = self.sections.sections[0].y;
 		let section_index = chunk_section_index(coord.1, lowy as i64);
@@ -206,15 +235,122 @@ impl DecodeNbt for Vec<BlockEntity> {
 }
 
 #[derive(Clone)]
+pub struct Lighting {
+	levels: Vec<u8>,
+}
+
+impl From<Vec<u8>> for Lighting {
+	fn from(value: Vec<u8>) -> Self {
+		Self {
+			levels: value
+		}
+	}
+}
+
+impl From<Vec<i8>> for Lighting {
+	fn from(value: Vec<i8>) -> Self {
+		Self {
+			levels: value.into_iter().map(|v| v as u8).collect()
+		}
+	}
+}
+
+impl Into<Vec<i8>> for Lighting {
+	fn into(self) -> Vec<i8> {
+		self.levels.into_iter().map(|v| v as i8).collect()
+	}
+}
+
+impl Into<Vec<u8>> for Lighting {
+	fn into(self) -> Vec<u8> {
+		self.levels
+	}
+}
+
+impl Lighting {
+	pub fn get(&self, x: i64, y: i64, z: i64) -> u8 {
+		let index = chunk_yzx_index(x, y, z);
+		let half_index = index.div_euclid(2);
+		let bit_offset = index.rem_euclid(2) * 4;
+		let level = self.levels[half_index];
+		(level & (0xf << bit_offset)) >> bit_offset
+	}
+
+	pub fn set(&mut self, x: i64, y: i64, z: i64, level: u8) -> u8 {
+		if level > 15 {
+			panic!("level must be less than 16.")
+		}
+		let index = chunk_yzx_index(x, y, z);
+		let half_index = index.div_euclid(2);
+		let bit_offset = index.rem_euclid(2) * 4;
+		let mask = 0xf << bit_offset;
+		let inv_mask = mask.not();
+		let old_level = self.levels[half_index];
+		let new_level = (old_level & inv_mask) | (level << bit_offset);
+		self.levels[half_index] = new_level;
+		(old_level & mask) >> bit_offset
+	}
+}
+
+impl DecodeNbt for Lighting {
+	fn decode_nbt(nbt: Tag) -> McResult<Self> {
+		if let Tag::ByteArray(light_data) = nbt {
+			Ok(Lighting::from(light_data))
+		} else {
+			Err(McError::NbtDecodeError)
+		}
+	}
+}
+
+impl EncodeNbt for Lighting {
+	fn encode_nbt(self) -> Tag {
+		Tag::ByteArray(self.into())
+	}
+}
+
+#[derive(Clone)]
 pub struct ChunkSection {
 	pub y: i8,
 	pub blocks: Option<Box<[u32]>>,
 	pub biomes: Option<Map>,
-	pub skylight: Option<Vec<i8>>,
-	pub blocklight: Option<Vec<i8>>,
+	pub skylight: Option<Lighting>,
+	pub blocklight: Option<Lighting>,
 }
 
 impl ChunkSection {
+
+	pub fn skylight(&self, x: i64, y: i64, z: i64) -> u8 {
+		if let Some(light) = &self.skylight {
+			light.get(x, y, z)
+		} else {
+			0
+		}
+	}
+
+	pub fn set_skylight(&mut self, x: i64, y: i64, z: i64, level: u8) -> u8 {
+		if let Some(light) = &mut self.skylight {
+			light.set(x, y, z, level)
+		} else {
+			0
+		}
+	}
+
+	pub fn blocklight(&self, x: i64, y: i64, z: i64) -> u8 {
+		if let Some(light) = &self.blocklight {
+			light.get(x, y, z)
+		} else {
+			0
+		}
+	}
+
+	pub fn set_blocklight(&mut self, x: i64, y: i64, z: i64, level: u8) -> u8 {
+		if let Some(light) = &mut self.blocklight {
+			light.set(x, y, z, level)
+		} else {
+			0
+		}
+	}
+
 	pub fn get_id(&self, local_x: i64, local_y: i64, local_z: i64) -> Option<u32> {
 		if let Some(blocks) = &self.blocks {
 			let index = chunk_yzx_index(local_x, local_y, local_z);
@@ -467,8 +603,8 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 	let y = map_decoder!(section; "Y" -> Byte);
 	// The following three may or may not exist.
 	let biomes = map_decoder!(section; "biomes" -> Option<Map>);
-	let blocklight = map_decoder!(section; "BlockLight" -> Option<ByteArray>);
-	let skylight = map_decoder!(section; "SkyLight" -> Option<ByteArray>);
+	let blocklight = map_decoder!(section; "BlockLight" -> Option<Lighting>);
+	let skylight = map_decoder!(section; "SkyLight" -> Option<Lighting>);
 
 	let block_states = map_decoder!(section; "block_states" -> Option<Map>);
 
