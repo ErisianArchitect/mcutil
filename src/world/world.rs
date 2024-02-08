@@ -205,8 +205,8 @@ impl VirtualJavaWorld {
 	//			from (center, radius)
 	pub fn load_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) -> McResult<()> {
 		let bounds: Bounds2 = bounds.into();
-		(bounds.min.y..bounds.max.y).try_for_each(|y| {
-			(bounds.min.x..bounds.max.x).try_for_each(|x| {
+		(bounds.min.y..=bounds.max.y).try_for_each(|y| {
+			(bounds.min.x..=bounds.max.x).try_for_each(|x| {
 				self.load_chunk(WorldCoord::new(x, y, dimension))?;
 				McResult::Ok(())
 			})
@@ -251,8 +251,8 @@ impl VirtualJavaWorld {
 
 	pub fn save_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) -> McResult<()> {
 		let bounds: Bounds2 = bounds.into();
-		(bounds.min.y..bounds.max.y).try_for_each(|y| {
-			(bounds.min.x..bounds.max.x).try_for_each(|x| {
+		(bounds.min.y..=bounds.max.y).try_for_each(|y| {
+			(bounds.min.x..=bounds.max.x).try_for_each(|x| {
 				self.save_chunk(WorldCoord::new(x, y, dimension))?;
 				McResult::Ok(())
 			})
@@ -291,8 +291,8 @@ impl VirtualJavaWorld {
 
 	pub fn unload_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) {
 		let bounds: Bounds2 = bounds.into();
-		(bounds.min.y..bounds.max.y).for_each(|y| {
-			(bounds.min.x..bounds.max.x).for_each(|x| {
+		(bounds.min.y..=bounds.max.y).for_each(|y| {
+			(bounds.min.x..=bounds.max.x).for_each(|x| {
 				self.unload_chunk(WorldCoord::new(x, y, dimension));
 			})
 		})
