@@ -101,8 +101,6 @@ pub struct Chunk {
 	pub sections: ChunkSections,
 	/// block_entities
 	pub block_entities: Vec<BlockEntity>,
-	/// CarvingMasks
-	pub carving_masks: Option<CarvingMasks>,
 	/// HeightMaps
 	pub heightmaps: Heightmaps,
 	/// fluid_ticks
@@ -115,6 +113,8 @@ pub struct Chunk {
 	pub post_processing: ListTag,
 	/// structures
 	pub structures: Map,
+	/// CarvingMasks
+	pub carving_masks: Option<CarvingMasks>,
 	/// Lights
 	pub lights: Option<ListTag>,
 	/// Entities
@@ -185,6 +185,15 @@ impl Chunk {
 			HeightmapFlag::MotionBlockingNoLeaves => self.heightmaps.motion_blocking_no_leaves.get((x, z)),
 			HeightmapFlag::OceanFloor => self.heightmaps.ocean_floor.get((x, z)),
 			HeightmapFlag::WorldSurface => self.heightmaps.world_surface.get((x, z)),
+		}
+	}
+
+	pub fn set_heightmap(&mut self, heightmap: HeightmapFlag, x: i64, z: i64, height: u16) {
+		match heightmap {
+			HeightmapFlag::MotionBlocking => self.heightmaps.motion_blocking.set((x, z), height),
+			HeightmapFlag::MotionBlockingNoLeaves => self.heightmaps.motion_blocking_no_leaves.set((x, z), height),
+			HeightmapFlag::OceanFloor => self.heightmaps.ocean_floor.set((x, z), height),
+			HeightmapFlag::WorldSurface => self.heightmaps.world_surface.set((x, z), height),
 		}
 	}
 }
@@ -400,7 +409,11 @@ impl Heightmap {
 		(self.map[sub_index] & mask) >> mask_offset
 	}
 
-	pub fn set(&mut self, coord: (i64, i64), height: u32) {
+	/// Height must be less than 512. Will panic otherwise.
+	pub fn set(&mut self, coord: (i64, i64), height: u16) {
+		if height > 511 {
+			panic!("Height should not be greater than 511.");
+		}
 		let index = (coord.1 * 16 + coord.0) as usize;
 		let sub_index = index / 7;
 		let mask_offset = (index % 7) * 9;
