@@ -125,45 +125,41 @@ pub struct Chunk {
 
 impl Chunk {
 
-	pub fn blocklight(&self, coord: (i64, i64, i64)) -> u8 {
+	#[inline(always)]
+	fn section_index_and_local_coord(&self, coord: (i64, i64, i64)) -> (usize, (i64, i64, i64)) {
 		let lowy = self.sections.sections[0].y;
 		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let local = chunk_local_coord(coord);
+		(section_index, local)
+	}
+
+	pub fn blocklight(&self, coord: (i64, i64, i64)) -> u8 {
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].blocklight(x, y, z)
 	}
 
 	pub fn skylight(&self, coord: (i64, i64, i64)) -> u8 {
-		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].skylight(x, y, z)
 	}
 
 	pub fn set_blocklight(&mut self, coord: (i64, i64, i64), level: u8) -> u8 {
-		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].set_blocklight(x, y, z, level)
 	}
 
 	pub fn set_skylight(&mut self, coord: (i64, i64, i64), level: u8) -> u8 {
-		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].set_skylight(x, y, z, level)
 	}
 
 	pub fn get_id(&self, coord: (i64, i64, i64)) -> Option<u32> {
-		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].get_id(x, y, z)
 	}
 
 	pub fn set_id(&mut self, coord: (i64, i64, i64), id: u32) -> Option<u32> {
-		let lowy = self.sections.sections[0].y;
-		let section_index = chunk_section_index(coord.1, lowy as i64);
-		let (x, y, z) = chunk_local_coord(coord);
+		let (section_index, (x, y, z)) = self.section_index_and_local_coord(coord);
 		self.sections.sections[section_index].set_id(x, y, z, id)
 	}
 
