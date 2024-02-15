@@ -46,24 +46,24 @@ impl CubeFaces {
 	}
 }
 
-#[test]
-fn qtest() {
-	let mut faces = CubeFaces::default();
-	faces.apply(CubeFace::Top | CubeFace::West);
-	faces.apply(CubeFace::North);
-	faces.remove(CubeFace::Top);
-	macro_rules! check {
-		($($face:ident),+) => {
-			$(
-				println!("{:>6}: {}", stringify!($face), faces.check(CubeFace::$face));
-			)+
-		};
-		() => {
-			check!(East, West, South, North, Top, Bottom);
-		};
-	}
-	check!();
-}
+// #[test]
+// fn qtest() {
+// 	let mut faces = CubeFaces::default();
+// 	faces.apply(CubeFace::Top | CubeFace::West);
+// 	faces.apply(CubeFace::North);
+// 	faces.remove(CubeFace::Top);
+// 	macro_rules! check {
+// 		($($face:ident),+) => {
+// 			$(
+// 				println!("{:>6}: {}", stringify!($face), faces.check(CubeFace::$face));
+// 			)+
+// 		};
+// 		() => {
+// 			check!(East, West, South, North, Top, Bottom);
+// 		};
+// 	}
+// 	check!();
+// }
 
 impl From<CubeFace> for CubeFaces {
 	#[inline(always)]
