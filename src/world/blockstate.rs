@@ -258,8 +258,8 @@ impl Display for BlockState {
 
 impl Display for BlockProperties {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "[")?;
 		if let Some(props) = &self.properties {
-			write!(f, "[")?;
 			let last = props.len() - 1;
 			props.iter()
 				.enumerate()
@@ -270,11 +270,7 @@ impl Display for BlockProperties {
 					}
 					Ok(())
 				})?;
-			write!(f, "]")?;
-			Ok(())
-		} else {
-			write!(f, "[]")?;
-			Ok(())
 		}
+		write!(f, "]")
 	}
 }
