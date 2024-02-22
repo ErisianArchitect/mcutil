@@ -213,14 +213,18 @@ macro_rules! tag_io {
 				let mut map = Map::new();
 				let mut id = TagID::nbt_read(reader);
 				while !matches!(id, Err($crate::McError::EndTagMarker)) {
-					let name = String::nbt_read(reader)?;
-					let tag = match id {
-						$(
-							Ok(TagID::$title) => Tag::$title(<$type>::nbt_read(reader)?),
-						)+
+					match id {
+						Ok(id) => {
+							let name = String::nbt_read(reader)?;
+							let tag = match id {
+								$(
+									TagID::$title => Tag::$title(<$type>::nbt_read(reader)?),
+								)+
+							};
+							map.insert(name, tag);
+						},
 						Err(err) => return Err(err),
 					};
-					map.insert(name, tag);
 					id = TagID::nbt_read(reader);
 				}
 				Ok(map)
