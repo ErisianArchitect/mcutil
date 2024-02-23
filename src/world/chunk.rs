@@ -218,24 +218,22 @@ impl EncodeNbt for Vec<BlockEntity> {
 
 impl DecodeNbt for Vec<BlockEntity> {
 	fn decode_nbt(nbt: Tag) -> McResult<Self> {
-		if let Tag::List(list) = nbt {
-			if let ListTag::Compound(entities) = list {
-				entities.into_iter().map(|mut entity| {
-					Ok(BlockEntity {
-						id: map_decoder!(entity; "id" -> String),
-						keep_packed: map_decoder!(entity; "keepPacked" -> i8),
-						x: map_decoder!(entity; "x" -> i32),
-						y: map_decoder!(entity; "y" -> i32),
-						z: map_decoder!(entity; "z" -> i32),
-						data: entity,
-					})
-				}).collect::<Result<Vec<BlockEntity>, McError>>()
-			} else {
-				Ok(Vec::new())
-			}
-		} else {
-			Err(McError::NbtDecodeError)
-		}
+		let Tag::List(list) = nbt else {
+			return Err(McError::NbtDecodeError);
+		};
+		let ListTag::Compound(entities) = list else {
+			return Ok(Vec::new());
+		};
+		entities.into_iter().map(|mut entity| {
+			Ok(BlockEntity {
+				id: map_decoder!(entity; "id" -> String),
+				keep_packed: map_decoder!(entity; "keepPacked" -> i8),
+				x: map_decoder!(entity; "x" -> i32),
+				y: map_decoder!(entity; "y" -> i32),
+				z: map_decoder!(entity; "z" -> i32),
+				data: entity,
+			})
+		}).collect::<Result<Vec<BlockEntity>, McError>>()
 	}
 }
 
@@ -369,14 +367,13 @@ impl ChunkSection {
 		if self.blocks.is_none() && id != 0 {
 			self.blocks = Some(Box::new([0u32; 4096]));
 		}
-		if let Some(blocks) = &mut self.blocks {
-			let index = chunk_yzx_index(local_x, local_y, local_z);
-			let result = blocks[index];
-			blocks[index] = id;
-			Some(result)
-		} else {
-			None
-		}
+		let Some(blocks) = &mut self.blocks else {
+			return None;
+		};
+		let index = chunk_yzx_index(local_x, local_y, local_z);
+		let result = blocks[index];
+		blocks[index] = id;
+		Some(result)
 	}
 }
 
@@ -485,18 +482,17 @@ impl EncodeNbt for Heightmaps {
 
 impl DecodeNbt for Heightmaps {
 	fn decode_nbt(nbt: Tag) -> McResult<Self> {
-		if let Tag::Compound(mut map) = nbt {
-			Ok(Heightmaps {
-				motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Heightmap),
-				motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Heightmap),
-				ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Heightmap),
-				ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Heightmap>),
-				world_surface: map_decoder!(map; "WORLD_SURFACE" -> Heightmap),
-				world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Heightmap>),
-			})
-		} else {
-			Err(McError::NbtDecodeError)
-		}
+		let Tag::Compound(mut map) = nbt else {
+			return Err(McError::NbtDecodeError);
+		};
+		Ok(Heightmaps {
+			motion_blocking: map_decoder!(map; "MOTION_BLOCKING" -> Heightmap),
+			motion_blocking_no_leaves: map_decoder!(map; "MOTION_BLOCKING_NO_LEAVES" -> Heightmap),
+			ocean_floor: map_decoder!(map; "OCEAN_FLOOR" -> Heightmap),
+			ocean_floor_wg: map_decoder!(map; "OCEAN_FLOOR_WG" -> Option<Heightmap>),
+			world_surface: map_decoder!(map; "WORLD_SURFACE" -> Heightmap),
+			world_surface_wg: map_decoder!(map; "WORLD_SURFACE_WG" -> Option<Heightmap>),
+		})
 	}
 }
 
@@ -519,16 +515,15 @@ impl EncodeNbt for CarvingMasks {
 
 impl DecodeNbt for CarvingMasks {
 	fn decode_nbt(nbt: Tag) -> McResult<Self> {
-		if let Tag::Compound(mut map) = nbt {
-			let air = map_decoder!(map; "AIR" -> Vec<i8>);
-			let liquid = map_decoder!(map; "LIQUID" -> Vec<i8>);
-			Ok(CarvingMasks {
-				air,
-				liquid,
-			})
-		} else {
-			Err(McError::NbtDecodeError)
-		}
+		let Tag::Compound(mut map) = nbt else {
+			return Err(McError::NbtDecodeError);
+		};
+		let air = map_decoder!(map; "AIR" -> Vec<i8>);
+		let liquid = map_decoder!(map; "LIQUID" -> Vec<i8>);
+		Ok(CarvingMasks {
+			air,
+			liquid,
+		})
 	}
 }
 
@@ -584,28 +579,12 @@ fn inject_palette_index(full_index: usize, palette_size: usize, states: &mut [i6
 }
 
 pub fn decode_palette(palette: ListTag) -> Result<Vec<BlockState>, McError> {
-	if let ListTag::Compound(states) = palette {
-		states.into_iter().map(|state| {
-			BlockState::try_from_map(&state)
-			// let name = map_decoder!(state; "Name" -> String);
-			// // The "Properties" tag may not exist.
-			// let properties = if state.contains_key("Properties") {
-			// 	let props = map_decoder!(state; "Properties" -> Map);
-			// 	BlockProperties::from(props.into_iter().map(|(name, value)| {
-			// 		if let Tag::String(value) = value {
-			// 			Ok((name, value))
-			// 		} else {
-			// 			Err(McError::NbtDecodeError)
-			// 		}
-			// 	}).collect::<Result<Vec<(String, String)>, McError>>()?)
-			// } else {
-			// 	BlockProperties::none()
-			// };
-			// Ok(BlockState::new(name, properties))
-		}).collect::<Result<Vec<BlockState>, McError>>()
-	} else {
-		Err(McError::NbtDecodeError)
-	}
+	let ListTag::Compound(states) = palette else {
+		return Err(McError::NbtDecodeError);
+	};
+	states.into_iter().map(|state| {
+		BlockState::try_from_map(&state)
+	}).collect::<Result<Vec<BlockState>, McError>>()
 }
 
 pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> Result<ChunkSection, McError> {
@@ -647,40 +626,39 @@ pub fn decode_section(block_registry: &mut BlockRegistry, mut section: Map) -> R
 }
 
 pub fn decode_chunk(block_registry: &mut BlockRegistry, nbt: Tag) -> McResult<Chunk> {
-	if let Tag::Compound(mut map) = nbt {
-		let sections = if let ListTag::Compound(sections) = map_decoder!(map; "sections" -> ListTag) {
-			sections.into_iter()
-				.map(|section| decode_section(block_registry, section))
-				.collect::<McResult<Vec<ChunkSection>>>()?
-		} else {
-			return Err(McError::NbtDecodeError);
-		};
-		let sections = ChunkSections {
-			sections,
-		};
-		Ok(Chunk {
-			sections,
-			data_version: map_decoder!(map; "DataVersion" -> i32),
-			x: map_decoder!(map; "xPos" -> i32),
-			y: map_decoder!(map; "yPos" -> i32),
-			z: map_decoder!(map; "zPos" -> i32),
-			last_update: map_decoder!(map; "LastUpdate" -> i64),
-			block_entities: map_decoder!(map; "block_entities" -> Vec<BlockEntity>),
-			heightmaps: map_decoder!(map; "Heightmaps" -> Heightmaps),
-			fluid_ticks: map_decoder!(map; "fluid_ticks" -> ListTag),
-			block_ticks: map_decoder!(map; "block_ticks" -> ListTag),
-			post_processing: map_decoder!(map; "PostProcessing" -> ListTag),
-			structures: map_decoder!(map; "structures" -> Map),
-			inhabited_time: map_decoder!(map; "InhabitedTime" -> i64),
-			status: map_decoder!(map; "Status" -> String),
-			carving_masks: map_decoder!(map; "CarvingMasks" -> Option<CarvingMasks>),
-			lights: map_decoder!(map; "Lights" -> Option<ListTag>),
-			entities: map_decoder!(map; "Entities" -> Option<ListTag>),
-			other: map,
-		})
+	let Tag::Compound(mut map) = nbt else {
+		return Err(McError::NbtDecodeError);
+	};
+	let sections = if let ListTag::Compound(sections) = map_decoder!(map; "sections" -> ListTag) {
+		sections.into_iter()
+			.map(|section| decode_section(block_registry, section))
+			.collect::<McResult<Vec<ChunkSection>>>()?
 	} else {
-		Err(McError::NbtDecodeError)
-	}
+		return Err(McError::NbtDecodeError);
+	};
+	let sections = ChunkSections {
+		sections,
+	};
+	Ok(Chunk {
+		sections,
+		data_version: map_decoder!(map; "DataVersion" -> i32),
+		x: map_decoder!(map; "xPos" -> i32),
+		y: map_decoder!(map; "yPos" -> i32),
+		z: map_decoder!(map; "zPos" -> i32),
+		last_update: map_decoder!(map; "LastUpdate" -> i64),
+		block_entities: map_decoder!(map; "block_entities" -> Vec<BlockEntity>),
+		heightmaps: map_decoder!(map; "Heightmaps" -> Heightmaps),
+		fluid_ticks: map_decoder!(map; "fluid_ticks" -> ListTag),
+		block_ticks: map_decoder!(map; "block_ticks" -> ListTag),
+		post_processing: map_decoder!(map; "PostProcessing" -> ListTag),
+		structures: map_decoder!(map; "structures" -> Map),
+		inhabited_time: map_decoder!(map; "InhabitedTime" -> i64),
+		status: map_decoder!(map; "Status" -> String),
+		carving_masks: map_decoder!(map; "CarvingMasks" -> Option<CarvingMasks>),
+		lights: map_decoder!(map; "Lights" -> Option<ListTag>),
+		entities: map_decoder!(map; "Entities" -> Option<ListTag>),
+		other: map,
+	})
 }
 
 fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]>>) -> Map {
