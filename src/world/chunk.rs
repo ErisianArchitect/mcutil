@@ -713,8 +713,9 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
 			("data".to_owned(), data),
 		])
 	} else {
-		let mut palette = Map::new();
-		palette.insert("Name".to_owned(), Tag::string("minecraft:air"));
+		let palette = Map::from([
+			("Name".to_owned(), Tag::string("minecraft:air"))
+		]);
 		let palette = ListTag::Compound(vec![palette]);
 		Map::from([
 			("palette".to_owned(), Tag::List(palette)),
