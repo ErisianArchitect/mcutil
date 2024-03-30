@@ -268,25 +268,25 @@ impl VirtualJavaWorld {
 
 	/// Remove a chunk from internal storage.
 	pub fn unload_chunk(&mut self, coord: WorldCoord) -> Option<ArcChunkSlot> {
-		if self.chunks.contains_key(&coord) {
-			let removed = self.chunks.remove(&coord);
-			let mut unload_region: bool = false;
-			{
-				let region = self.regions.get(&coord.region_coord());
-				if let Some(region) = region {
-					let reglock = region.lock();
-					if let Ok(mut region) = reglock {
-						unload_region = region.decrement();
-					}
+		
+		if !self.chunks.contains_key(&coord) {
+			return None;
+		}
+		let removed = self.chunks.remove(&coord);
+		let mut unload_region: bool = false;
+		{
+			let region = self.regions.get(&coord.region_coord());
+			if let Some(region) = region {
+				let reglock = region.lock();
+				if let Ok(mut region) = reglock {
+					unload_region = region.decrement();
 				}
 			}
-			if unload_region {
-				self.regions.remove(&coord.region_coord());
-			}
-			removed
-		} else {
-			None
 		}
+		if unload_region {
+			self.regions.remove(&coord.region_coord());
+		}
+		removed
 	}
 
 	pub fn unload_area<T: Into<Bounds2>>(&mut self, dimension: Dimension, bounds: T) {
@@ -326,20 +326,21 @@ impl VirtualJavaWorld {
 	/// Set a block id, returning the old block id.
 	/// (This function does not check that the ids are the same)
 	pub fn set_id(&mut self, coord: BlockCoord, id: u32) -> Option<u32> {
-		if let Some(slot) = self.get_chunk(coord.chunk_coord()) {
-			if let Ok(mut slot) = slot.lock() {
-				let old_id = slot.chunk.set_id(coord.xyz(), id);
-				if let Some(old_id) = old_id {
-					if old_id != id {
-						slot.mark_dirty();
-					}
-				} else {
-					slot.mark_dirty();
-				}
-				return old_id
+		let Some(slot) = self.get_chunk(coord.chunk_coord()) else {
+			return None;
+		};
+		let Ok(mut slot) = slot.lock() else {
+			return None;
+		};
+		let old_id = slot.chunk.set_id(coord.xyz(), id);
+		if let Some(old_id) = old_id {
+			if old_id != id {
+				slot.mark_dirty();
 			}
+		} else {
+			slot.mark_dirty();
 		}
-		None
+		old_id
 	}
 
 	/// Set the block state at a coordinate. This will return the old block state.
