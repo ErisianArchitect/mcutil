@@ -65,7 +65,9 @@ impl ManagedSector {
 	pub const EMPTY: Self = Self::new(0, 0);
 	pub const HEADER: Self = Self::new(0, 2);
 	pub const FULL: Self = Self::new(u32::MIN, u32::MAX);
-	pub const INACCESSIBLE: Self = Self::new(16777215, u32::MAX);
+	pub const ACCESSIBLE: Self = Self::new(0, 0xFFFFFF);
+	/// Inaccessible because sector sizes use 24 bits.
+	pub const INACCESSIBLE: Self = Self::new(0x1000000, u32::MAX);
 	/// Create a new [ManagedSector] from the start and end offsets.
 	/// Ensure that `start` <= `end`.
 	pub const fn new(start: u32, end: u32) -> Self {
