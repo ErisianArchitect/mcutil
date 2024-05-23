@@ -591,6 +591,14 @@ impl From<&str> for Tag {
 	}
 }
 
+/// Creates a [Tag::List] from a [ListTag]
+impl From<ListTag> for Tag {
+    /// Creates a [Tag::List] from a [ListTag]
+    fn from(value: ListTag) -> Self {
+        Tag::List(value)
+    }
+}
+
 /// Attempts to create a [bool] from a [Tag].
 /// The [Tag] must be a numeric type, such as [Tag::Byte], or [Tag::Float]. `0` Represents `false` and non-zero represents `true`.
 impl TryFrom<Tag> for bool {
