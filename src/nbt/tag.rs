@@ -205,13 +205,19 @@ impl ListTag {
 	}
 }
 
+impl From<Vec<&str>> for ListTag {
+    fn from(value: Vec<&str>) -> Self {
+        ListTag::String(value.into_iter().map(str::to_owned).collect())
+    }
+}
+
 impl TryFrom<u8> for TagID {
 	type Error = crate::McError;
 	#[doc = "
 	Attempts to create a [TagID] from a [u8].<br>
 	Errors:
-	- [NbtError::End]
-	- [NbtError::Unsupported] { id_encountered }
+	- [McError::EndTagMarker]
+	- [McError::UnsupportedTagId] (id_encountered)
 	"]
 	fn try_from(value: u8) -> Result<Self,Self::Error> {
 		match value {
