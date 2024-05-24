@@ -698,16 +698,16 @@ fn encode_block_states(block_registry: &BlockRegistry, blocks: &Option<Box<[u32]
         // To find the packed buffer size, you simply divide 4096 by vpl, and if
         // there is a remainder, add one.
         let buffer_size = 4096/vpl + ((4096u64.rem_euclid(vpl) != 0) as u64);
-        let mut data = vec![0i64; buffer_size as usize];
+        let mut packed = vec![0i64; buffer_size as usize];
         local_ids.into_iter().enumerate().for_each(|(i, id)| {
-            inject_palette_index(i, palette.len(), &mut data, id);
+            inject_palette_index(i, palette.len(), &mut packed, id);
         });
         // Build palette
         let palette = palette.into_iter().map(|state| {
             state.to_nbt()
         }).collect::<Vec<Map>>();
         let palette = Tag::List(ListTag::Compound(palette));
-        let data = Tag::LongArray(data);
+        let data = Tag::LongArray(packed);
         Map::from([
             ("palette".to_owned(), palette),
             ("data".to_owned(), data),
