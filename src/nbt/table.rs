@@ -24,8 +24,8 @@
 /// ```
 #[macro_export]
 macro_rules! tag_info_table {
-	($macro:ident) => {
-		$macro! {
+    ($macro:ident) => {
+        $macro! {
 //ID	Title		Type						[Implementation							]
 0001	Byte		i8							[$crate::nbt::family::Primitive			]
 0002	Short		i16							[$crate::nbt::family::NonBytePrimitive	]
@@ -39,8 +39,8 @@ macro_rules! tag_info_table {
 0010	Compound	$crate::nbt::Map			[$crate::nbt::family::NonByte			]
 0011	IntArray	std::vec::Vec::<i32>		[$crate::nbt::family::NonByte			]
 0012	LongArray	std::vec::Vec::<i64>		[$crate::nbt::family::NonByte			]
-		}
-	};
+        }
+    };
 }
 
 // Python: ['Byte', 'Short', 'Int', 'Long', 'Float', 'Double', 'ByteArray', 'String', 'List', 'Compound', 'IntArray', 'LongArray']

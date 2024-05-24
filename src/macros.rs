@@ -27,39 +27,39 @@
 /// ```
 #[macro_export]
 macro_rules! make_table {
-	($name:ident($dolla:tt$rule:ident);$({$($item:tt)*})+) => {
-		macro_rules! $name {
-			($dolla$rule:path) => {
-				$(
-					$dolla$rule!{$($item)*}
-				)*
-			};
-		}
-	};
+    ($name:ident($dolla:tt$rule:ident);$({$($item:tt)*})+) => {
+        macro_rules! $name {
+            ($dolla$rule:path) => {
+                $(
+                    $dolla$rule!{$($item)*}
+                )*
+            };
+        }
+    };
 }
 
 /// Measures the execution time of some set of instructions.
 #[macro_export]
 macro_rules! measure_time {
-	($($token:stmt)*) => {
-		{
-			let now = std::time::Instant::now();
-			$($token)*
-			now.elapsed()
-		}
-	};
+    ($($token:stmt)*) => {
+        {
+            let now = std::time::Instant::now();
+            $($token)*
+            now.elapsed()
+        }
+    };
 }
 
 #[test]
 fn timetest() {
-	let time = measure_time!{
-		std::thread::sleep(std::time::Duration::from_secs(1));
-		#[derive(Debug)]
-		struct A {
-			name: String,
-		}
-		let a = A { name: "Test".into() };
-	};
+    let time = measure_time!{
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        #[derive(Debug)]
+        struct A {
+            name: String,
+        }
+        let a = A { name: "Test".into() };
+    };
 }
 
 /// The purpose of this macro is to be able to generate code for each
@@ -70,26 +70,26 @@ fn timetest() {
 /// by typing `;unsigned` or `;signed` after the provided macro argument.
 #[macro_export]
 macro_rules! for_each_int_type {
-	($macro:path) => {
-		$crate::for_each_int_type!($macro;unsigned);
-		$crate::for_each_int_type!($macro;signed);
-	};
-	($macro:path;unsigned) => {
-		$macro!{usize}
-		$macro!{u128}
-		$macro!{u64}
-		$macro!{u32}
-		$macro!{u16}
-		$macro!{u8}
-	};
-	($macro:path;signed) => {
-		$macro!{isize}
-		$macro!{i128}
-		$macro!{i64}
-		$macro!{i32}
-		$macro!{i16}
-		$macro!{i8}
-	}
+    ($macro:path) => {
+        $crate::for_each_int_type!($macro;unsigned);
+        $crate::for_each_int_type!($macro;signed);
+    };
+    ($macro:path;unsigned) => {
+        $macro!{usize}
+        $macro!{u128}
+        $macro!{u64}
+        $macro!{u32}
+        $macro!{u16}
+        $macro!{u8}
+    };
+    ($macro:path;signed) => {
+        $macro!{isize}
+        $macro!{i128}
+        $macro!{i64}
+        $macro!{i32}
+        $macro!{i16}
+        $macro!{i8}
+    }
 }
 
 /// Continue a loop if a condition is met.
@@ -113,9 +113,9 @@ macro_rules! for_each_int_type {
 /// }
 #[macro_export]	
 macro_rules! continue_if {
-	($($label:lifetime : )? $condition:expr) => {
-		if $condition { continue $($label)?; }
-	};
+    ($($label:lifetime : )? $condition:expr) => {
+        if $condition { continue $($label)?; }
+    };
 }
 
 /// Break from a loop if a condition is met.
@@ -146,9 +146,9 @@ macro_rules! continue_if {
 /// ```
 #[macro_export]	
 macro_rules! break_if {
-	($($label:lifetime:)? $condition:expr $(=> $result:expr)?) => {
-		if $condition { break $($label)? $($result)?; }
-	};
+    ($($label:lifetime:)? $condition:expr $(=> $result:expr)?) => {
+        if $condition { break $($label)? $($result)?; }
+    };
 }
 
 /// Return from a function if a condition is met.
@@ -174,19 +174,19 @@ macro_rules! break_if {
 /// ```
 #[macro_export]
 macro_rules! return_if {
-	($condition:expr $(=> $result:expr)?) => {
-		if $condition {
-			return $($result)?;
-		}
-	};
+    ($condition:expr $(=> $result:expr)?) => {
+        if $condition {
+            return $($result)?;
+        }
+    };
 }
 
 #[test]
 fn print_types() {
-	macro_rules! print_type {
-		($token:tt) => {
-			println!("{}", stringify!($token));
-		};
-	}
-	for_each_int_type!(print_type);
+    macro_rules! print_type {
+        ($token:tt) => {
+            println!("{}", stringify!($token));
+        };
+    }
+    for_each_int_type!(print_type);
 }

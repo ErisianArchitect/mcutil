@@ -1,10 +1,10 @@
 use crate::for_each_int_type;
 use crate::nbt::Map;
 use crate::nbt::tag::{
-	Tag,
-	TagID,
-	ListTag,
-	NbtType,
+    Tag,
+    TagID,
+    ListTag,
+    NbtType,
 };
 
 pub type Byte = i8;
@@ -21,32 +21,32 @@ pub type IntArray = Vec<i32>;
 pub type LongArray = Vec<i64>;
 
 pub trait TypeId {
-	fn tag_id() -> TagID;
+    fn tag_id() -> TagID;
 }
 
 macro_rules! typeid_impls {
-	($($type:ty => $id:expr;)+) => {
-		$(
-			impl TypeId for $type {
-				fn tag_id() -> TagID {
-					$id
-				}
-			}
-		)+
-	};
+    ($($type:ty => $id:expr;)+) => {
+        $(
+            impl TypeId for $type {
+                fn tag_id() -> TagID {
+                    $id
+                }
+            }
+        )+
+    };
 }
 
 typeid_impls!(
-	Byte => TagID::Byte;
-	Short => TagID::Short;
-	Int => TagID::Int;
-	Long => TagID::Long;
-	Float => TagID::Float;
-	Double => TagID::Double;
-	ByteArray => TagID::ByteArray;
-	String => TagID::String;
-	ListTag => TagID::List;
-	Compound => TagID::Compound;
-	IntArray => TagID::IntArray;
-	LongArray => TagID::LongArray;
+    Byte => TagID::Byte;
+    Short => TagID::Short;
+    Int => TagID::Int;
+    Long => TagID::Long;
+    Float => TagID::Float;
+    Double => TagID::Double;
+    ByteArray => TagID::ByteArray;
+    String => TagID::String;
+    ListTag => TagID::List;
+    Compound => TagID::Compound;
+    IntArray => TagID::IntArray;
+    LongArray => TagID::LongArray;
 );

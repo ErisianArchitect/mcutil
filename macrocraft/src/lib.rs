@@ -30,8 +30,8 @@ use syn::{
     Block,
     Token,
     parenthesized,
-	visit_mut,
-	visit,
+    visit_mut,
+    visit,
 };
 
 // struct visitor {
@@ -47,39 +47,39 @@ use syn::{
 macro_rules! eat_tokens {($($token:tt)*)=>{};}
 
 eat_tokens!{table_macro_name[$];
-	_ => apple | banana | canteloupe;
-	apple => {
-		{"This is the Apple branch."},
-		{"This is another element of the Apple branch."},
-		{"This is a third element."}
-	};
-	banana => {
-		{"This is the Banana branch."},
-		{"The quick brown fox jumps over the lazy dog."},
-		{"Patience is a virtue."}
-	}
-	canteloupe => {
-		{"This is the Canteloupe branch."},
-		{"Did I spell that right? I can't tell."},
-		{"Why am I always making three elements?"}
-	}
+    _ => apple | banana | canteloupe;
+    apple => {
+        {"This is the Apple branch."},
+        {"This is another element of the Apple branch."},
+        {"This is a third element."}
+    };
+    banana => {
+        {"This is the Banana branch."},
+        {"The quick brown fox jumps over the lazy dog."},
+        {"Patience is a virtue."}
+    }
+    canteloupe => {
+        {"This is the Canteloupe branch."},
+        {"Did I spell that right? I can't tell."},
+        {"Why am I always making three elements?"}
+    }
 }
 
 eat_tokens!{
-	"test": "The quick brown fox jumps over the lazy dog.",
-	rabbit: {
-		id: "minecraft:rabbit",
-		x: 3.0,
-		y: 87.5,
-		z: 588.0,
-	},
-	items: [
-		${}
-	],
+    "test": "The quick brown fox jumps over the lazy dog.",
+    rabbit: {
+        id: "minecraft:rabbit",
+        x: 3.0,
+        y: 87.5,
+        z: 588.0,
+    },
+    items: [
+        "Hello,"
+    ],
 }
 
 #[proc_macro]
 pub fn nbt(input: TokenStream) -> TokenStream {
-	
-	input
+    
+    input
 }
