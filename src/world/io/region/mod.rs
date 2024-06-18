@@ -20,7 +20,7 @@ pub mod prelude;
     │ How do Region Files work?                                                    │
     ╰──────────────────────────────────────────────────────────────────────────────╯
     Region files have an 8KiB header that contains two tables, each table with 1024
-    elements.
+    32-bit elements.
 
     The first table is the Sector Offset table. Sector offsets are 2 values, the
     actual offset, and the size. Both of these values are packed into 4 bytes. The
@@ -33,7 +33,7 @@ pub mod prelude;
     This is the first 4KiB.
 
     Directly fter the offset table is the timestamp table, which also contains 1024
-    32-bit values. The timestamps are Unix timestamps in (I believe UTC).
+    32-bit elements. The timestamps are Unix timestamps in (I believe UTC).
 
     These 1024 elements in these 2 tables represent data associated with some chunk
     that may be written to the file. There are 32x32 potential slots for chunks.
@@ -42,8 +42,8 @@ pub mod prelude;
 
     Both values within the sector offset must be multiplied by 4096 in order to get
     the actual value. So to get the stream offset that you must seek to in order to
-    find this sector, simple multiple the offset value by 4096. To get the size
-    within the file that the data occupies, multiple the size by 4096.
+    find this sector, simply multiply the offset value by 4096. To get the size
+    within the file that the data occupies, multiply the size by 4096.
 
     If the sector offset's values are not 0, there may be a chunk present in the
     file. If you go to the file offset that the sector offset points to, you will
@@ -57,9 +57,10 @@ pub mod prelude;
         : occupied while the length at that offset is zero.
 
     Following the length is a single byte representing the compression scheme used
-    used to save that chunk. The possible values are 1 for GZip, 2 for ZLib, and 3
-    for uncompressed. After the compression scheme are length-1 bytes of data that
-    represent a chunk within a Minecraft world, which is in NBT format.
+    to save that chunk. The possible values are 1 for GZip, 2 for ZLib, and 3 for 
+    uncompressed. After the compression scheme are (length - 1) bytes of data that
+    represent a chunk within a Minecraft world, which is in NBT format. This chunk
+    is a named tag.
 
     After the chunk is some pad bytes (typically zeroes, but I don't think that it
     is a requirement that the pad bytes are zeroes).
