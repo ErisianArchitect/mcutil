@@ -157,7 +157,7 @@ impl RegionManager for &mut RegionFile {
         if sector.is_empty() {
             return Ok(sector);
         }
-        self.sector_manager.free(sector);
+        self.sector_manager.deallocate(sector);
         self.header.sectors[coord.index()] = RegionSector::default();
         self.header.timestamps[coord.index()] = Timestamp::default();
         // Clear the sector from the sector table
