@@ -11,7 +11,7 @@ use crate::{
 use super::prelude::*;
 
 pub trait SectorAllocator {
-    fn free(&mut self, sector: RegionSector);
+    fn deallocate(&mut self, sector: RegionSector);
     #[must_use]
     fn allocate(&mut self, size: u8) -> Option<RegionSector>;
     #[must_use]
@@ -54,7 +54,7 @@ impl SectorAllocator for SectorManager {
     //       It's best if you only supply RegionSectors supplied by
     //       the same instance of a sector manager.
     /// Frees a sector, allowing it to be reused.
-    fn free(&mut self, sector: RegionSector) {
+    fn deallocate(&mut self, sector: RegionSector) {
         // Early return if the sector is empty (nothing to free)
         if sector.size() == 0 {
             return;
@@ -203,17 +203,16 @@ impl SectorAllocator for SectorManager {
             return None;
         }
         // We don't need to do an allocation if our freed sector is big enough to accomodate the new size.
-        if free.sector_count() >= (new_size as u64) {
-            // No need to reallocate.
-            if free.sector_count() == (new_size as u64) {
-                Some(free)
-            } else {
-                // Use split_left so that when the right side is freed, it can be absorbed
-                // into the end_sector if they are adjacent.
-                let (new, old) = free.split_left(new_size).unwrap();
-                self.free(old);
-                Some(new)
-            }
+        if free.sector_count() > (new_size as u64) {
+            // Use split_left so that when the right side is freed, it can be absorbed
+            // into the end_sector if they are adjacent.
+            let (new, old) = free.split_left(new_size).unwrap();
+            self.deallocate(old);
+            Some(new)
+        // No need to reallocate.
+        } else if free.sector_count() == (new_size as u64) {
+            Some(free)
+        // No need to deallocate.
         } else if free.is_empty() {
             // The sector is empty, so there's nothing to free.
             self.allocate(new_size)
