@@ -90,5 +90,5 @@ pub const fn required_sectors(size: u32) -> u32 {
 /// multiple of 4096.
 pub const fn pad_size(size: u64) -> u64 {
     // Some bit-level hacking makes this really easy.
-    (4096 - (size & 4095)) & 4095
+    4096 - (size & 4095)
 }
