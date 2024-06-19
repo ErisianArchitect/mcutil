@@ -80,6 +80,7 @@ impl RegionManager for &mut RegionFile {
         let scheme: CompressionScheme = reader.read_value()?;
         match scheme {
             CompressionScheme::GZip => {
+                // Subtract 1 from length because the compression scheme is included in the length.
                 let mut decoder = GzDecoder::new(reader.take((length - 1) as u64));
                 T::read_from(&mut decoder)
             },
