@@ -1,8 +1,7 @@
-// pub mod region;
-pub mod chunk;
 pub mod io;
-pub mod blockregistry;
 pub mod blockstate;
+pub mod blockregistry;
+pub mod chunk;
 pub mod world;
 pub mod container;
 pub mod block;
