@@ -1,12 +1,12 @@
-pub mod nbt;
+// pub mod nbt;
 pub mod world;
 pub mod ioext;
-pub mod data;
+// pub mod data;
 pub mod error;
 pub mod math;
 pub mod macros;
 pub mod util;
-pub mod meshing;
+// pub mod meshing;
 
 pub use flate2;
 
