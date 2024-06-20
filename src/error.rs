@@ -13,7 +13,9 @@ pub enum McError {
     #[error("IO Error: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Chunk not found.")]
-    ChunkNotFound,
+    RegionDataNotFound,
+    #[error("Attempted to write chunk data that takes up more that 255 4KiB blocks.")]
+    RegionDataTooLarge,
     #[error("Invalid Compression value: {0}")]
     InvalidCompressionScheme(u8),
     #[error("Out of range error.")]
@@ -24,12 +26,8 @@ pub enum McError {
     UnsupportedTagId(u8),
     #[error("Encountered the End Tag ID marker.")]
     EndTagMarker,
-    #[error("Attempted to save two chunks to the same location.")]
-    DuplicateChunk,
     #[error("Stream position was not on 4KiB boundary.")]
     StreamSectorBoundaryError,
-    #[error("Attempted to write chunk data that takes up more that 255 4KiB blocks.")]
-    ChunkTooLarge,
     #[error("Failed to allocate RegionSector.")]
     RegionAllocationFailure,
     #[error("Region file is too small to contain a header.")]
