@@ -69,13 +69,13 @@ impl RegionManager for &mut RegionFile {
         let coord: RegionCoord = coord.into();
         let sector = self.header.sectors[coord.index()];
         if sector.is_empty() {
-            return Err(McError::ChunkNotFound);
+            return Err(McError::RegionDataNotFound);
         }
         let mut reader = BufReader::new(&mut self.file_handle);
         reader.seek(SeekFrom::Start(sector.offset()))?;
         let length: u32 = reader.read_value()?;
         if length == 0 {
-            return Err(McError::ChunkNotFound);
+            return Err(McError::RegionDataNotFound);
         }
         let scheme: CompressionScheme = reader.read_value()?;
         match scheme {
@@ -114,7 +114,7 @@ impl RegionManager for &mut RegionFile {
         let required_sectors = required_sectors((length + 5) as u32);
         // If there is an overflow, return an error because there's no way to write it to the file.
         if required_sectors > 255 {
-            return Err(McError::ChunkTooLarge);
+            return Err(McError::RegionDataTooLarge);
         }
         // Write pad zeroes
         // + 5 because you need to add the (length_bytes + CompressionScheme)
