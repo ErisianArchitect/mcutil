@@ -176,15 +176,19 @@ impl RegionFile {
         }
     }
 
-    /// Writes data to the region file with the `utc_now` timestamp
-    ///  and returns the [RegionSector] where it was written.
-    pub fn write_with_utcnow<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
-        self.write_timestamped(coord, value, Timestamp::utc_now())
+    pub fn write_with_utcnow<C: Into<RegionCoord>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&mut self, coord: C, mut write: F) -> McResult<RegionSector> {
+        self.write_timestamped(coord, Timestamp::utc_now(), |writer| {
+            write(writer)
+        })
     }
 
-    
+    /// Writes data to the region file with the `utc_now` timestamp
+    ///  and returns the [RegionSector] where it was written.
+    pub fn write_data_with_utcnow<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
+        self.write_data_timestamped(coord, value, Timestamp::utc_now())
+    }
 
-    pub fn read_data<C: Into<RegionCoord>, T: Readable>(&mut self, coord: C) -> McResult<T> {
+    pub fn read<'a, C: Into<RegionCoord>, R, F: FnMut(MultiDecoder<'a>) -> McResult<R>>(&'a mut self, coord: C, mut read: F) -> McResult<R> {
         let coord: RegionCoord = coord.into();
         let sector = self.header.sectors[coord.index()];
         if sector.is_empty() {
@@ -200,20 +204,29 @@ impl RegionFile {
         match scheme {
             CompressionScheme::GZip => {
                 // Subtract 1 from length because the compression scheme is included in the length.
-                let mut decoder = GzDecoder::new(reader.take((length - 1) as u64));
-                T::read_from(&mut decoder)
+                let decoder = GzDecoder::new(reader.take((length - 1) as u64));
+                let multi = MultiDecoder::GZip(decoder);
+                read(multi)
             },
             CompressionScheme::ZLib => {
-                let mut decoder = ZlibDecoder::new(reader.take((length - 1) as u64));
-                T::read_from(&mut decoder)
+                let decoder = ZlibDecoder::new(reader.take((length - 1) as u64));
+                let multi = MultiDecoder::ZLib(decoder);
+                read(multi)
             },
             CompressionScheme::Uncompressed => {
-                T::read_from(&mut reader.take((length - 1) as u64))
+                let multi = MultiDecoder::Uncompressed(reader.take((length - 1) as u64));
+                read(multi)
             },
         }
     }
 
-    pub fn write_data<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
+    pub fn read_data<C: Into<RegionCoord>, T: Readable>(&mut self, coord: C) -> McResult<T> {
+        self.read(coord, |mut decoder| {
+            T::read_from(&mut decoder)
+        })
+    }
+
+    pub fn write<'a, C: Into<RegionCoord>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&'a mut self, coord: C, mut write: F) -> McResult<RegionSector> {
         let coord: RegionCoord = coord.into();
         // Clear the write_buf to prepare it for writing.
         self.write_buf.get_mut().clear();
@@ -223,7 +236,8 @@ impl RegionFile {
         self.write_buf.write_all(&[2u8; 5])?;
         // Now we'll write the data to the compressor.
         let mut encoder = ZlibEncoder::new(&mut self.write_buf, self.compression);
-        value.write_to(&mut encoder)?;
+        // value.write_to(&mut encoder)?;
+        write(&mut encoder)?;
         encoder.finish()?;
         // Get the length of the written data by getting the length of the buffer and subtracting 5 (for
         // the bytes that were pre-written in a previous step)
@@ -257,9 +271,17 @@ impl RegionFile {
         Ok(new_sector)
     }
 
-    pub fn write_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, value: &T, timestamp: Ts) -> McResult<RegionSector> {
+    pub fn write_data<C: Into<RegionCoord>, T: Writable>(&mut self, coord: C, value: &T) -> McResult<RegionSector> {
+        self.write(coord, |mut encoder| {
+            value.write_to(&mut encoder)?;
+            Ok(())
+        })
+    }
+
+    pub fn write_timestamped<'a, C: Into<RegionCoord>, Ts: Into<Timestamp>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&mut self, coord: C, timestamp: Ts, mut write: F) -> McResult<RegionSector> {
         let coord: RegionCoord = coord.into();
-        let allocation = self.write_data(coord, value)?;
+        // let allocation = self.write_data(coord, value)?;
+        let allocation = self.write(coord, write)?;
         let timestamp: Timestamp = timestamp.into();
         self.header.timestamps[coord.index()] = timestamp;
         // Write the timestamp to the file.
@@ -269,6 +291,13 @@ impl RegionFile {
         // I'm pretty sure that flush() doesn't do anything, but I'll put it here just in case.
         writer.flush()?;
         Ok(allocation)
+    }
+
+    pub fn write_data_timestamped<C: Into<RegionCoord>, T: Writable, Ts: Into<Timestamp>>(&mut self, coord: C, value: &T, timestamp: Ts) -> McResult<RegionSector> {
+        self.write_timestamped(coord, timestamp, |writer| {
+            value.write_to(writer)?;
+            Ok(())
+        })
     }
 
     pub fn delete_data<C: Into<RegionCoord>>(&mut self, coord: C) -> McResult<RegionSector> {
