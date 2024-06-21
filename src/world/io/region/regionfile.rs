@@ -278,7 +278,7 @@ impl RegionFile {
         })
     }
 
-    pub fn write_timestamped<'a, C: Into<RegionCoord>, Ts: Into<Timestamp>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&mut self, coord: C, timestamp: Ts, mut write: F) -> McResult<RegionSector> {
+    pub fn write_timestamped<'a, C: Into<RegionCoord>, Ts: Into<Timestamp>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&mut self, coord: C, timestamp: Ts, write: F) -> McResult<RegionSector> {
         let coord: RegionCoord = coord.into();
         // let allocation = self.write_data(coord, value)?;
         let allocation = self.write(coord, write)?;
