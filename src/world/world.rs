@@ -239,7 +239,7 @@ impl VirtualJavaWorld {
                 if let Ok(mut region) = reglock {
                     let nbt = slot.chunk.to_nbt(&self.block_registry);
                     let root = NamedTag::new(nbt);
-                    region.region.write_with_utcnow(coord.xz(), &root)?;
+                    region.region.write_data_with_utcnow(coord.xz(), &root)?;
                     slot.dirty = false;
                     return Ok(());
                 }
