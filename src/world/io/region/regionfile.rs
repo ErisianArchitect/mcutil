@@ -226,7 +226,7 @@ impl RegionFile {
         })
     }
 
-    pub fn write<'a, C: Into<RegionCoord>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&'a mut self, coord: C, mut write: F) -> McResult<RegionSector> {
+    pub fn write<C: Into<RegionCoord>, F: FnMut(&mut ZlibEncoder<&mut Cursor<Vec<u8>>>) -> McResult<()>>(&mut self, coord: C, mut write: F) -> McResult<RegionSector> {
         let coord: RegionCoord = coord.into();
         // Clear the write_buf to prepare it for writing.
         self.write_buf.get_mut().clear();
