@@ -88,7 +88,7 @@ pub enum ListTag {
 }
 
 #[doc = "The NBT tag type ID."]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum TagID {
     Byte = 1,
     Short = 2,
