@@ -24,7 +24,7 @@
 /// ```
 #[macro_export]
 macro_rules! tag_info_table {
-    ($macro:ident) => {
+    ($macro:path) => {
         $macro! {
 //ID	Title		Type						[Implementation							]
 0001	Byte		i8							[$crate::nbt::family::Primitive			]

@@ -175,7 +175,7 @@ impl SectorAllocator for SectorManager {
                 if old_sector.is_empty() {
                     self.unused_sectors.swap_remove(index);
                 } else {
-                    self.unused_sectors[index] = old_sector.into();
+                    self.unused_sectors[index] = old_sector;
                 }
                 Some(RegionSector::from(new_sector))
             })

@@ -1,6 +1,5 @@
 use std::io::{
-    Write, Read,
-    Seek, SeekFrom,
+    Cursor, Read, Seek, SeekFrom, Write
 };
 
 use crate::McResult;
@@ -44,6 +43,12 @@ impl<R: Read + Sized> ReadExt for R {
     fn read_value<T: Readable>(&mut self) -> McResult<T> {
         T::read_from(self)
     }
+}
+
+#[test]
+fn quick() {
+    let mut buffer = Cursor::new(Vec::new());
+    buffer.write_value(3);
 }
 
 pub trait SeekExt: Seek + Sized {
